@@ -310,7 +310,7 @@ jobs:
 
           make defconfig
 
-          required_device='CONFIG_TARGET_mediatek_filogic_DEVICE_oray_x1-pro=y'
+          required_device='CONFIG_TARGET_mediatek_filogic_DEVICE_oray_x1pro=y'
           if ! grep -Fqx "$required_device" .config; then
             echo "ERROR: missing device target after defconfig: $required_device" >&2
             exit 1
@@ -326,7 +326,7 @@ jobs:
           fi
 
           mapfile -t SYSUPGRADES < <(find bin/targets -type f \
-            -name '*oray_x1-pro*sysupgrade.bin' -print)
+            -name '*oray_x1pro*sysupgrade.bin' -print)
           if [ "${#SYSUPGRADES[@]}" -ne 1 ]; then
             echo "ERROR: expected exactly one X1 Pro sysupgrade.bin, found ${#SYSUPGRADES[@]}" >&2
             find bin/targets -type f -name '*sysupgrade*' -print
@@ -418,7 +418,7 @@ jobs:
           PY
 
           mapfile -t MANIFESTS < <(find "$(dirname "$SYSUPGRADE")" -maxdepth 1 -type f \
-            -name '*oray_x1-pro*.manifest' -print)
+            -name '*oray_x1pro*.manifest' -print)
           if [ "${#MANIFESTS[@]}" -ne 1 ]; then
             echo "ERROR: expected exactly one X1 Pro manifest, found ${#MANIFESTS[@]}" >&2
             exit 1

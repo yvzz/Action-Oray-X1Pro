@@ -55,7 +55,7 @@ diff --git a/target/linux/mediatek/image/filogic.mk b/target/linux/mediatek/imag
  endef
  TARGET_DEVICES += nradio_c8-668gl
  
-+define Device/oray_x1-pro
++define Device/oray_x1pro
 +  DEVICE_VENDOR := Oray
 +  DEVICE_MODEL := X1 Pro
 +  DEVICE_VARIANT := v1
@@ -71,7 +71,7 @@ diff --git a/target/linux/mediatek/image/filogic.mk b/target/linux/mediatek/imag
 +  KERNEL_IN_UBI := 1
 +  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
 +endef
-+TARGET_DEVICES += oray_x1-pro
++TARGET_DEVICES += oray_x1pro
 +
  define Device/openembed_som7981
    DEVICE_VENDOR := OpenEmbed
