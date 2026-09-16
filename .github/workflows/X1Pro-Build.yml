@@ -566,7 +566,7 @@ jobs:
 
   # ── 清理：旧 workflow runs / 旧 release / 孤儿 tag（阈值 12h） ──
   cleanup:
-    name: Cleanup (>12h)
+    name: Clean Old Workflow & Release
     needs: [build, release, email]
     if: ${{ !cancelled() && needs.build.result != 'skipped' }}
     runs-on: ubuntu-24.04
