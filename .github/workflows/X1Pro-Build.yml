@@ -1,4 +1,4 @@
-name: Build ImmortalWrt X1Pro
+name: Build ImmortalWrt for X1Pro
 
 permissions:
   contents: read
