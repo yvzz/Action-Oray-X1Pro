@@ -523,9 +523,9 @@ jobs:
             由 GitHub Actions 自动发送
           attachments: firmware_collection/*.bin
 
-  # ── 清理：旧 workflow runs / 旧 release / 孤儿 tag（阈值 12h） ──
+  # ── 清理：删旧 workflow runs / 旧 release（保留最新 1 个）/ 孤儿 tag ──
   cleanup:
-    name: Clean Old Workflow & Release
+    name: Cleanup (keep 1 release)
     needs: [build, release, email]
     if: ${{ !cancelled() && needs.build.result != 'skipped' }}
     runs-on: ubuntu-24.04
@@ -536,9 +536,8 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       REPO: ${{ github.repository }}
       CURRENT_RUN_ID: ${{ github.run_id }}
-      RETAIN_SECONDS: '43200'
     steps:
-      - name: Delete old workflow runs (>12h)
+      - name: Delete old workflow runs (all)
         run: |
           set -uo pipefail
           WORKFLOW_ID=$(gh api "repos/$REPO/actions/runs/$CURRENT_RUN_ID" --jq '.workflow_id')
@@ -546,56 +545,50 @@ jobs:
             echo "ERROR: invalid workflow_id: $WORKFLOW_ID" >&2
             exit 1
           fi
-          NOW_TS=$(date +%s)
-          echo "Now: $(date -d "@$NOW_TS" '+%F %T %Z') | threshold: delete runs older than $((RETAIN_SECONDS/3600))h"
           deleted=0
-          while IFS=$'\t' read -r rid created; do
+          while read -r rid; do
             [ "$rid" = "$CURRENT_RUN_ID" ] && continue
-            run_ts=$(date -d "$created" +%s) || continue
-            age=$(( NOW_TS - run_ts ))
-            if [ "$age" -ge "$RETAIN_SECONDS" ]; then
-              echo "Deleting workflow run $rid (created $created, age ${age}s)"
-              if gh api --method DELETE "repos/$REPO/actions/runs/$rid" --silent; then
-                deleted=$((deleted+1))
-              else
-                echo "  warn: failed to delete run $rid"
-              fi
+            echo "Deleting workflow run $rid"
+            if gh api --method DELETE "repos/$REPO/actions/runs/$rid" --silent; then
+              deleted=$((deleted+1))
+            else
+              echo "  warn: failed to delete run $rid"
             fi
-          done < <(gh api "repos/$REPO/actions/workflows/$WORKFLOW_ID/runs?per_page=100" --paginate --jq '.[] | select(.status=="completed") | [.id, .created_at] | @tsv')
+          done < <(gh api "repos/$REPO/actions/workflows/$WORKFLOW_ID/runs?per_page=100" --paginate --jq '.[] | select(.status=="completed") | .id')
           echo "Deleted $deleted workflow run(s)"
 
-      - name: Delete old releases (>12h)
+      - name: Delete old releases (keep latest 1)
         run: |
           set -uo pipefail
-          NOW_TS=$(date +%s)
+          REL_LIST="$RUNNER_TEMP/releases.tsv"
+          gh api "repos/$REPO/releases?per_page=100" --paginate --jq '.[] | [.id, .tag_name, .created_at] | @tsv' | sort -t$'\t' -k3 -r > "$REL_LIST" || true
+          total=$(wc -l < "$REL_LIST")
+          echo "Found $total release(s); keeping the latest 1"
           deleted=0
           while IFS=$'\t' read -r rid tag created; do
             [ -z "$tag" ] && continue
-            rel_ts=$(date -d "$created" +%s) || continue
-            age=$(( NOW_TS - rel_ts ))
-            if [ "$age" -ge "$RETAIN_SECONDS" ]; then
-              echo "Deleting release $tag (id $rid, created $created, age ${age}s)"
-              if gh release delete "$tag" --yes --cleanup-tag --repo "$REPO"; then
-                deleted=$((deleted+1))
-              else
-                echo "  warn: failed to delete release $tag"
-              fi
+            echo "Deleting release $tag (id $rid, created $created)"
+            if gh release delete "$tag" --yes --cleanup-tag --repo "$REPO"; then
+              deleted=$((deleted+1))
+            else
+              echo "  warn: failed to delete release $tag"
             fi
-          done < <(gh api "repos/$REPO/releases?per_page=100" --paginate --jq '.[] | [.id, .tag_name, .created_at] | @tsv')
+          done < <(tail -n +2 "$REL_LIST")
           echo "Deleted $deleted release(s)"
 
-      - name: Delete orphan tags (X1Pro-* without release)
+      - name: Delete orphan tags (all without release)
         run: |
           set -uo pipefail
-          ALL_TAGS="$RUNNER_TEMP/x1pro-tags.txt"
+          ALL_TAGS="$RUNNER_TEMP/all-tags.txt"
           REL_TAGS="$RUNNER_TEMP/release-tags.txt"
-          gh api "repos/$REPO/tags?per_page=100" --paginate --jq '.[] | select(.name | startswith("X1Pro-")) | .name' | sort > "$ALL_TAGS" || true
+          gh api "repos/$REPO/tags?per_page=100" --paginate --jq '.[].name' | sort > "$ALL_TAGS" || true
           gh api "repos/$REPO/releases?per_page=100" --paginate --jq '.[] | select(.tag_name != null) | .tag_name' | sort > "$REL_TAGS" || true
           deleted=0
           while read -r tag; do
             [ -z "$tag" ] && continue
+            enc_tag=${tag//\//%2F}
             echo "Deleting orphan tag: $tag"
-            if gh api --method DELETE "repos/$REPO/git/refs/tags/$tag" --silent; then
+            if gh api --method DELETE "repos/$REPO/git/refs/tags/$enc_tag" --silent; then
               deleted=$((deleted+1))
             else
               echo "  warn: failed to delete tag $tag"
