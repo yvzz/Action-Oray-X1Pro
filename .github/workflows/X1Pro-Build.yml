@@ -149,14 +149,33 @@ jobs:
     steps:
       - name: Check Server Performance
         run: |
-          echo "CPU核心: $(nproc)"
-          echo "CPU型号: $(cat /proc/cpuinfo | grep -m1 name | awk -F: '{print $2}')"
-          echo "内存: $(free -h | grep Mem | awk '{print $2}')"
+          echo "==================== 服务器硬件配置 ===================="
+          echo ""
+          echo "[CPU]"
+          echo "  型号: $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | xargs)"
+          echo "  物理核心: $(grep -c '^processor' /proc/cpuinfo)"
+          echo "  逻辑核心(线程): $(nproc)"
+          echo "  架构: $(uname -m)"
+          echo ""
+          echo "[内存]"
+          free -h | awk '/^Mem:/{printf "  总内存: %s\n  已用: %s\n  可用: %s\n", $2, $3, $7}'
+          echo "  Swap: $(free -h | awk '/^Swap:/{print $2" (总) / "$3" (已用)"}')"
+          echo ""
+          echo "[磁盘]"
+          df -h / /workdir 2>/dev/null | awk 'NR==1 || /\//{printf "  %-12s %6s 总 / %6s 已用 / %6s 可用 (挂载点 %s)\n", $1, $2, $3, $4, $6}'
+          echo ""
+          echo "[系统]"
+          echo "  内核: $(uname -r)"
+          echo "  发行版: $(. /etc/os-release && echo "$PRETTY_NAME")"
+          echo "  主机名: $(hostname)"
+          echo "  时区: $(cat /etc/timezone 2>/dev/null || timedatectl show -p Timezone --value 2>/dev/null || echo 'UTC')"
+          echo ""
+          echo "========================================================"
 
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Set BUILD_DATE and BUILD_TIME
+      - name: Set Build Info
         id: date
         run: |
           echo "BUILD_DATE=$(date +'%Y%m%d')" >> $GITHUB_ENV
@@ -256,8 +275,7 @@ jobs:
             echo "Patched $f"
           done
 
-      # ── 多设备循环编译 ──
-      - name: Multi-Device Compilation
+      - name: Build Firmware Compilation
         id: compile
         run: |
           PROXY="${{ env.PROXY }}"
