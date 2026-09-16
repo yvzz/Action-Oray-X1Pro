@@ -527,9 +527,46 @@ jobs:
           body_path: release.txt
           files: firmware_collection/*.bin
 
+  # ── 邮件发送固件 ──────────────────────────────
+  email:
+    name: Send firmware via email
+    needs: [build, release]
+    if: ${{ !cancelled() && needs.build.result == 'success' && (github.event_name != 'workflow_dispatch' || inputs.email == true) }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      BUILD_TIME: ${{ needs.build.outputs.build_time }}
+    steps:
+      - name: Download firmware artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: X1Pro-2512-${{ env.PROXY }}-${{ needs.build.outputs.build_time }}
+          path: firmware_collection
+
+      - name: Send firmware via email
+        uses: dawidd6/action-send-mail@v22
+        with:
+          server_address: smtp.qq.com
+          server_port: 465
+          username: ${{ secrets.MAIL_USER }}
+          password: ${{ secrets.MAIL_PASS }}
+          subject: 'X1Pro-2512 固件 [${{ env.PROXY }}] ${{ env.BUILD_TIME }}'
+          to: yvzz@qq.com
+          from: 'X1Pro Build <${{ secrets.MAIL_USER }}>'
+          body: |
+            X1Pro-2512 固件编译完成
+
+            代理版本: ${{ env.PROXY }}
+            构建时间: ${{ env.BUILD_TIME }}
+            固件文件见附件，通过 sysupgrade 刷入。
+
+            由 GitHub Actions 自动发送
+          attachments: firmware_collection/*.bin
+
   cleanup:
     name: Delete old workflow runs
-    needs: [build, release]
+    needs: [build, release, email]
     if: ${{ !cancelled() && needs.build.result != 'skipped' }}
     runs-on: ubuntu-24.04
     permissions:
