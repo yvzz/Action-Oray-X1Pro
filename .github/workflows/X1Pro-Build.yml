@@ -167,7 +167,7 @@ jobs:
       build_time: ${{ steps.metadata.outputs.build_time }}
       build_start_ts: ${{ steps.metadata.outputs.build_start_ts }}
     steps:
-      - name: 检测服务器硬件配置
+      - name: Check Server Performance
         run: |
           echo "==================== 服务器硬件配置 ===================="
           echo ""
@@ -197,7 +197,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set build metadata
+      - name: Set Build Info
         id: metadata
         run: |
           BUILD_TIME=$(date +'%Y%m%d-%H%M%S')
@@ -272,7 +272,7 @@ jobs:
           sudo mkswap /swapfile
           sudo swapon /swapfile
 
-      - name: Build firmware
+      - name: Build Firmware Compilation
         id: compile
         working-directory: /workdir/openwrt
         run: |
