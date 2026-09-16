@@ -67,7 +67,6 @@ env:
   FEEDS_CONF: feeds.conf.default
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
-  UPLOAD_RELEASE: ${{ (github.event_name == 'workflow_dispatch' && inputs.release == true) || (github.event_name == 'repository_dispatch' && github.event.client_payload.release == true) }}
   PROXY: ${{ github.event.inputs.proxy || 'none' }}
   BUILD_NOTES: ${{ github.event.inputs.notes || github.event.client_payload.notes || '' }}
   TZ: Asia/Shanghai
@@ -157,10 +156,14 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set BUILD_DATE and BUILD_TIME
+        id: date
         run: |
           echo "BUILD_DATE=$(date +'%Y%m%d')" >> $GITHUB_ENV
-          echo "BUILD_TIME=$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_ENV
+          BUILD_TIME=$(date +'%Y%m%d-%H%M%S')
+          echo "BUILD_TIME=$BUILD_TIME" >> $GITHUB_ENV
           echo "BUILD_START_TS=$(date +%s)" >> $GITHUB_ENV
+          echo "build_time=$BUILD_TIME" >> $GITHUB_OUTPUT
+          echo "build_start_ts=$(date +%s)" >> $GITHUB_OUTPUT
 
       - name: Free Disk Space
         uses: jlumbroso/free-disk-space@main
@@ -363,32 +366,24 @@ jobs:
           name: X1Pro-2410-${{ env.PROXY }}-${{ env.BUILD_TIME }}
           path: firmware_collection/*.bin
 
-      # ── 邮件发送固件 ──
-      - name: Send firmware via email
-        uses: dawidd6/action-send-mail@v22
-        if: steps.compile.outputs.status == 'success' && (github.event_name != 'workflow_dispatch' || inputs.email == true)
+  # ── 发布到 Release ──────────────────────────────
+  release:
+    name: Release X1Pro
+    needs: build
+    if: ${{ needs.build.result == 'success' && ((github.event_name == 'workflow_dispatch' && inputs.release == true) || (github.event_name == 'repository_dispatch' && github.event.client_payload.release == true)) }}
+    runs-on: ubuntu-24.04
+    env:
+      BUILD_TIME: ${{ needs.build.outputs.build_time }}
+      BUILD_START_TS: ${{ needs.build.outputs.build_start_ts }}
+    steps:
+      - name: Download firmware artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          server_address: smtp.qq.com
-          server_port: 465
-          username: ${{ secrets.MAIL_USER }}
-          password: ${{ secrets.MAIL_PASS }}
-          subject: 'X1Pro-2410 固件 [${{ env.PROXY }}] ${{ env.BUILD_TIME }}'
-          to: yvzz@qq.com
-          from: 'X1Pro Build <${{ secrets.MAIL_USER }}>'
-          body: |
-            X1Pro-2410 固件编译完成
+          name: X1Pro-2410-${{ env.PROXY }}-${{ needs.build.outputs.build_time }}
+          path: firmware_collection
 
-            代理版本: ${{ env.PROXY }}
-            构建时间: ${{ env.BUILD_TIME }}
-            固件文件见附件，通过 sysupgrade 刷入。
-
-            由 GitHub Actions 自动发送
-          attachments: firmware_collection/*.bin
-
-      # ── Release ──
       - name: Generate Release
         id: release
-        if: steps.compile.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true'
         run: |
           RELEASE_TAG="X1Pro-${{ env.BUILD_TIME }}"
           echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
@@ -445,9 +440,50 @@ jobs:
           files: |
             firmware_collection/*sysupgrade.bin
 
+  # ── 邮件发送固件 ──────────────────────────────
+  email:
+    name: Send firmware via email
+    needs: [build, release]
+    if: ${{ !cancelled() && needs.build.result == 'success' && (github.event_name != 'workflow_dispatch' || inputs.email == true) }}
+    runs-on: ubuntu-24.04
+    env:
+      BUILD_TIME: ${{ needs.build.outputs.build_time }}
+    steps:
+      - name: Download firmware artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: X1Pro-2410-${{ env.PROXY }}-${{ needs.build.outputs.build_time }}
+          path: firmware_collection
+
+      - name: Send firmware via email
+        uses: dawidd6/action-send-mail@v22
+        with:
+          server_address: smtp.qq.com
+          server_port: 465
+          username: ${{ secrets.MAIL_USER }}
+          password: ${{ secrets.MAIL_PASS }}
+          subject: 'X1Pro-2410 固件 [${{ env.PROXY }}] ${{ env.BUILD_TIME }}'
+          to: yvzz@qq.com
+          from: 'X1Pro Build <${{ secrets.MAIL_USER }}>'
+          body: |
+            X1Pro-2410 固件编译完成
+
+            代理版本: ${{ env.PROXY }}
+            构建时间: ${{ env.BUILD_TIME }}
+            固件文件见附件，通过 sysupgrade 刷入。
+
+            由 GitHub Actions 自动发送
+          attachments: firmware_collection/*.bin
+
+  # ── 清理旧的 workflow runs ──────────────────────
+  cleanup:
+    name: Delete old workflow runs
+    needs: [build, release, email]
+    if: ${{ !cancelled() && needs.build.result != 'skipped' }}
+    runs-on: ubuntu-24.04
+    steps:
       - name: Delete old workflow runs
         uses: Mattraks/delete-workflow-runs@v2
-        if: always()
         with:
           retain_days: 0
           keep_minimum_runs: 10
