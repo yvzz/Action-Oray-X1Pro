@@ -127,18 +127,44 @@ jobs:
         uses: mxschmitt/action-tmate@v3
         timeout-minutes: 30
 
-      - name: Push config
+      - name: Export diffconfig
+        working-directory: /workdir/openwrt
         run: |
-          cp -f /workdir/openwrt/.config "$GITHUB_WORKSPACE/config/x1pro.config"
-          cd "$GITHUB_WORKSPACE"
+          ./scripts/diffconfig.sh > "$RUNNER_TEMP/x1pro.config"
+
+      - name: Upload diffconfig
+        uses: actions/upload-artifact@v7
+        with:
+          name: X1Pro-Menuconfig-${{ github.run_id }}
+          path: ${{ runner.temp }}/x1pro.config
+
+  # ── 保存 menuconfig 改动 ──────────────────────
+  save-menuconfig:
+    name: Save menuconfig
+    needs: menuconfig
+    if: ${{ needs.menuconfig.result == 'success' && github.ref_type == 'branch' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Download diffconfig
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: X1Pro-Menuconfig-${{ github.run_id }}
+          path: menuconfig-output
+
+      - name: Commit diffconfig
+        run: |
+          cp menuconfig-output/x1pro.config config/x1pro.config
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add config/x1pro.config
-          git diff --cached --quiet || (
-            git commit -m "Update config: x1pro" || true
-            git pull --rebase origin $(git rev-parse --abbrev-ref HEAD)
-            git push -f origin HEAD:$(git rev-parse --abbrev-ref HEAD)
-          )
+          if ! git diff --cached --quiet; then
+            git commit -m "build: update X1 Pro config"
+            git pull --rebase origin "$GITHUB_REF_NAME"
+            git push origin "HEAD:$GITHUB_REF_NAME"
+          fi
 
   # ── 编译（单 job + for 循环，复用 toolchain） ───
   build:
