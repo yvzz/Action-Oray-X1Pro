@@ -52,6 +52,11 @@ on:
         required: false
         type: boolean
         default: false
+      email:
+        description: '编译成功后固件发送到邮箱'
+        required: false
+        type: boolean
+        default: true
 
 env:
   CCACHE_DIR: /workdir/.ccache
@@ -357,6 +362,28 @@ jobs:
         with:
           name: X1Pro-2410-${{ env.PROXY }}-${{ env.BUILD_TIME }}
           path: firmware_collection/*.bin
+
+      # ── 邮件发送固件 ──
+      - name: Send firmware via email
+        uses: dawidd6/action-send-mail@v22
+        if: steps.compile.outputs.status == 'success' && (github.event_name != 'workflow_dispatch' || inputs.email == true)
+        with:
+          server_address: smtp.qq.com
+          server_port: 465
+          username: ${{ secrets.MAIL_USER }}
+          password: ${{ secrets.MAIL_PASS }}
+          subject: 'X1Pro-2410 固件 [${{ env.PROXY }}] ${{ env.BUILD_TIME }}'
+          to: yvzz@qq.com
+          from: 'X1Pro Build <${{ secrets.MAIL_USER }}>'
+          body: |
+            X1Pro-2410 固件编译完成
+
+            代理版本: ${{ env.PROXY }}
+            构建时间: ${{ env.BUILD_TIME }}
+            固件文件见附件，通过 sysupgrade 刷入。
+
+            由 GitHub Actions 自动发送
+          attachments: firmware_collection/*.bin
 
       # ── Release ──
       - name: Generate Release
