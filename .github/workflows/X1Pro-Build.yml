@@ -171,6 +171,9 @@ jobs:
     name: Build X1Pro
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.ssh }}
     runs-on: ubuntu-24.04
+    outputs:
+      build_time: ${{ steps.date.outputs.build_time }}
+      build_start_ts: ${{ steps.date.outputs.build_start_ts }}
 
     steps:
       - name: Check Server Performance
