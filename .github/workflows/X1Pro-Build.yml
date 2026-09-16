@@ -143,6 +143,7 @@ jobs:
   # ── 编译（单 job + for 循环，复用 toolchain） ───
   build:
     name: Build X1Pro
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.ssh }}
     runs-on: ubuntu-24.04
 
     steps:
