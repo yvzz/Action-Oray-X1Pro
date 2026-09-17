@@ -597,7 +597,7 @@ jobs:
             else
               echo "  warn: failed to delete run $rid"
             fi
-          done < <(gh api "repos/$REPO/actions/workflows/$WORKFLOW_ID/runs?per_page=100" --paginate --jq '.[] | select(.status=="completed") | .id')
+          done < <(gh api "repos/$REPO/actions/workflows/$WORKFLOW_ID/runs?per_page=100" --paginate --jq '.workflow_runs[] | select(.status=="completed") | .id')
           echo "Deleted $deleted workflow run(s)"
 
       - name: Delete old releases (keep latest 1)
