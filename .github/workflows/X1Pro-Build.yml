@@ -4,6 +4,8 @@ permissions:
   contents: read
 
 on:
+  push:
+    branches: [v25.12]
   schedule:
     - cron: '0 20 */3 * *'
   repository_dispatch:
