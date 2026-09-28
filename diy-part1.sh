@@ -13,7 +13,7 @@ echo "=== DIY Part 1: X1 Pro setup ==="
 # 1. Clone third-party packages into package/ (参照 TR3000)
 #    直接 clone 避免 feeds 分支/index 问题
 mkdir -p "$OPENWRT/package"
-for repo in luci-theme-aurora luci-app-aurora-config luci-app-bandix openwrt-bandix luci-app-easytier; do
+for repo in luci-theme-aurora luci-app-aurora-config luci-app-bandix openwrt-bandix luci-app-easytier luci-app-vnt2; do
   if [ -d "$OPENWRT/package/$repo" ]; then
     echo "  → $repo already exists, skipping clone"
   else
@@ -23,6 +23,7 @@ for repo in luci-theme-aurora luci-app-aurora-config luci-app-bandix openwrt-ban
       luci-app-bandix)        url="https://github.com/timsaya/luci-app-bandix" ;;
       openwrt-bandix)         url="https://github.com/timsaya/openwrt-bandix" ;;
       luci-app-easytier)     url="https://github.com/EasyTier/luci-app-easytier" ;;
+      luci-app-vnt2)         url="https://github.com/whzhni1/luci-app-vnt2" ;;
     esac
     git clone --depth=1 "$url" "$OPENWRT/package/$repo"
   fi
