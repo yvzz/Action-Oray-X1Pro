@@ -30,6 +30,34 @@ for repo in luci-theme-aurora luci-app-aurora-config luci-app-bandix openwrt-ban
 done
 echo "  → aurora packages cloned"
 
+# 1b2. NPC 升级到 0.34（djylb/nps-openwrt）
+#   上游 immortalwrt/packages 的 net/nps 是 Go 源码编译、版本停在 0.26.24，
+#   且同一个包同时产出 npc + nps 两个包。改用 djylb 的 npc 包（0.34.7，下载官方
+#   预编译二进制；aarch64 → arm64 资产 linux_arm64_client.tar.gz）。
+#   npc 0.34 废弃了 -config=<文件> 的启动方式，改用纯命令行参数
+#   （-server= -vkey= -type= -dns_server= -log=），旧版 init 脚本与 LuCI 界面配置项
+#   均不兼容，故旧 files/ 下的 npc 界面文件已移除，改由 luci-app-npc 包提供。
+#   必须移除 feeds 的 net/nps：它同时定义 npc，否则 npc 会有两个提供者导致冲突。
+NPS_OPENWRT_TARGET="$OPENWRT/package/nps-openwrt"
+rm -rf "$NPS_OPENWRT_TARGET"
+if git clone --depth 1 https://github.com/djylb/nps-openwrt "$NPS_OPENWRT_TARGET"; then
+  echo "  → cloned nps-openwrt (npc 0.34.7)"
+  rm -rf "$NPS_OPENWRT_TARGET/nps" "$NPS_OPENWRT_TARGET/luci-app-nps"
+  removed=0
+  for d in "$OPENWRT"/package/feeds/*/npc "$OPENWRT"/package/feeds/*/nps; do
+    if [ -e "$d" ] || [ -L "$d" ]; then
+      rm -rf "$d"
+      echo "  → removed feeds conflict: ${d#$OPENWRT/}"
+      removed=1
+    fi
+  done
+  if [ "$removed" = 0 ]; then
+    echo "  → [info] no feeds npc/nps package found to remove"
+  fi
+else
+  echo "  → [WARN] failed to clone nps-openwrt; npc stays at feeds 0.26.24 without LuCI UI" >&2
+fi
+
 # 1b. Fix bandix Makefile: 将 zoneinfo-all 改为 zoneinfo-asia（.config 已启用）
 BANDIX_MK="$OPENWRT/package/openwrt-bandix/openwrt-bandix/Makefile"
 if [ -f "$BANDIX_MK" ]; then
