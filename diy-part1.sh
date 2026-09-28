@@ -69,6 +69,34 @@ else
 	echo "WARNING: failed to clone luci-app-vnt2; firmware will build without VNT2" >&2
 fi
 
+# ---- NPC 升级到 0.34 (djylb/nps-openwrt) ----
+# 上游 immortalwrt/packages 的 net/nps 是 Go 源码编译、版本停在 0.26.24，且同一个包
+# 同时产出 npc + nps。改用 djylb 的 npc 包（0.34.7，下载官方预编译二进制；
+# aarch64 → arm64 资产 linux_arm64_client.tar.gz）。
+# npc 0.34 废弃了 -config=<文件> 的启动方式，改用纯命令行参数
+# （-server= -vkey= -type= -dns_server= -log=），旧版 init 与 LuCI 配置项不兼容，
+# 故旧的 files/ npc 界面文件已移除，改由 luci-app-npc 包提供。
+# 必须移除 feeds 的 net/nps：它同时定义 npc，否则 npc 会有两个提供者导致冲突。
+NPS_OPENWRT_TARGET="$OPENWRT/package/nps-openwrt"
+rm -rf "$NPS_OPENWRT_TARGET"
+if git clone --depth 1 https://github.com/djylb/nps-openwrt "$NPS_OPENWRT_TARGET"; then
+	echo "[ok] cloned nps-openwrt (npc 0.34.7)"
+	rm -rf "$NPS_OPENWRT_TARGET/nps" "$NPS_OPENWRT_TARGET/luci-app-nps"
+	removed=0
+	for d in "$OPENWRT"/package/feeds/*/npc "$OPENWRT"/package/feeds/*/nps; do
+		if [ -e "$d" ] || [ -L "$d" ]; then
+			rm -rf "$d"
+			echo "[ok] removed feeds conflict: ${d#$OPENWRT/}"
+			removed=1
+		fi
+	done
+	if [ "$removed" = 0 ]; then
+		echo "[info] no feeds npc/nps package found to remove"
+	fi
+else
+	echo "WARNING: failed to clone nps-openwrt; npc stays at feeds 0.26.24 without LuCI UI" >&2
+fi
+
 # ---- Rust host-compile fix (merged from diy-part2.sh — that script is NOT called by the workflow) ----
 # rustc 1.94.0's bootstrap fetches a prebuilt CI LLVM tarball; the URL 404s because
 # old CI artifacts get pruned from ci-artifacts.rust-lang.org. Disable download-ci-llvm
