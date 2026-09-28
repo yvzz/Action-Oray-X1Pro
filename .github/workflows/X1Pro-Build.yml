@@ -527,7 +527,7 @@ jobs:
 
   # ── 清理：删旧 workflow runs / 旧 release（保留最新 1 个）/ 孤儿 tag ──
   cleanup:
-    name: Cleanup (keep 1 release)
+    name: Cleanup (keep 7 days)
     needs: [build, release, email]
     if: ${{ !cancelled() && needs.build.result != 'skipped' }}
     runs-on: ubuntu-24.04
@@ -559,24 +559,40 @@ jobs:
           done < <(gh api "repos/$REPO/actions/workflows/$WORKFLOW_ID/runs?per_page=100" --paginate --jq '.workflow_runs[] | select(.status=="completed") | .id')
           echo "Deleted $deleted workflow run(s)"
 
-      - name: Delete old releases (keep latest 1)
+      - name: Delete old releases (keep last 7 days)
         run: |
           set -uo pipefail
+          RETENTION_DAYS=7
+          CUTOFF_TS=$(date -u -d "$RETENTION_DAYS days ago" +%s)
+          echo "Keeping releases published after $(date -u -d @"$CUTOFF_TS" '+%Y-%m-%d %H:%M:%S UTC') (last ${RETENTION_DAYS} days)"
           REL_LIST="$RUNNER_TEMP/releases.tsv"
-          gh api "repos/$REPO/releases?per_page=100" --paginate --jq '.[] | [.id, .tag_name, .created_at] | @tsv' | sort -t$'\t' -k3 -r > "$REL_LIST" || true
+          gh api "repos/$REPO/releases?per_page=100" --paginate \
+            --jq '.[] | [.id, .tag_name, (.published_at // .created_at)] | @tsv' > "$REL_LIST" || true
           total=$(wc -l < "$REL_LIST")
-          echo "Found $total release(s); keeping the latest 1"
+          echo "Found $total release(s)"
           deleted=0
+          kept=0
           while IFS=$'\t' read -r rid tag created; do
             [ -z "$tag" ] && continue
-            echo "Deleting release $tag (id $rid, created $created)"
+            created_ts=$(date -u -d "$created" +%s 2>/dev/null || true)
+            if [ -z "$created_ts" ]; then
+              echo "  keep:   $tag (无法解析发布时间的 '$created'，保守保留)"
+              kept=$((kept+1))
+              continue
+            fi
+            if [ "$created_ts" -ge "$CUTOFF_TS" ]; then
+              echo "  keep:   $tag (published $created)"
+              kept=$((kept+1))
+              continue
+            fi
+            echo "Deleting release $tag (id $rid, published $created)"
             if gh release delete "$tag" --yes --cleanup-tag --repo "$REPO"; then
               deleted=$((deleted+1))
             else
               echo "  warn: failed to delete release $tag"
             fi
-          done < <(tail -n +2 "$REL_LIST")
-          echo "Deleted $deleted release(s)"
+          done < "$REL_LIST"
+          echo "Deleted $deleted release(s); kept $kept"
 
       - name: Delete orphan tags (all without release)
         run: |
