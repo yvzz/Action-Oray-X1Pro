@@ -5,6 +5,8 @@ permissions:
   actions: write
 
 on:
+  push:
+    branches: [v24.10]
   schedule:
     - cron: 0 20 */3 * *   # UTC 00:00 = 北京 04:00，每3天一次
   repository_dispatch:
