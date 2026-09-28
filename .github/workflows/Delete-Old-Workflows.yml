@@ -4,7 +4,7 @@ on:
   # push:
   #   branches: [ main, master ]
   schedule:
-    - cron: 10 23 */3 * *
+    - cron: 0 16 * * 1     # 每周一 00:00 北京时间（UTC+8）＝ UTC 周日 16:00
   workflow_dispatch:
     inputs:
       delete_failed:
@@ -102,8 +102,8 @@ jobs:
               /tmp/runs.json >> /tmp/ids-to-delete.txt
           fi
 
-          # success runs: 删超过保留期的，或运行时间 < 180s
-          echo "  + success runs: older than $CUTOFF OR runtime < 180s" >&2
+          # success runs: 删超过保留期的，或运行时间 < 60s
+          echo "  + success runs: older than $CUTOFF OR runtime < 60s" >&2
           jq -r --arg CURRENT "$CURRENT_RUN_ID" --arg CUTOFF "$CUTOFF" \
             '.[] | select(.status == "completed") | select(.conclusion == "success") | select((.databaseId | tostring) != $CURRENT) | select((.createdAt < $CUTOFF) or ((.updatedAt | fromdateiso8601) - (.createdAt | fromdateiso8601) < 60)) | .databaseId | tostring' \
             /tmp/runs.json >> /tmp/ids-to-delete.txt
