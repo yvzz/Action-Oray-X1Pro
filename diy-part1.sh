@@ -40,6 +40,20 @@ for pkg in luci-theme-aurora luci-app-aurora-config; do
 	fi
 done
 
+# ---- EasyTier (一仓多包: easytier core + easytier-noweb + luci-app-easytier + i18n) ----
+# 与 24.10 分支同源同方式: 官方仓库 EasyTier/luci-app-easytier 同时提供
+# easytier 核心包与 luci-app-easytier 界面包（luci.mk 自动生成 luci-i18n-easytier-<lang>），
+# 未进 feeds，需 clone 到 package/ 由 buildroot 两层目录扫描自动识别。
+# 依赖 kmod-tun + luci-compat（三份 config 均已启用）；若 clone 失败仅告警不阻塞，
+# 此时 make defconfig 会静默丢弃 CONFIG_PACKAGE_easytier / luci-app-easytier 符号。
+EASYTIER_TARGET="$OPENWRT/package/luci-app-easytier"
+rm -rf "$EASYTIER_TARGET"
+if git clone --depth 1 https://github.com/EasyTier/luci-app-easytier "$EASYTIER_TARGET"; then
+	echo "[ok] cloned luci-app-easytier (含 easytier core) into package/"
+else
+	echo "WARNING: failed to clone luci-app-easytier; firmware will build without EasyTier" >&2
+fi
+
 # ---- Rust host-compile fix (merged from diy-part2.sh — that script is NOT called by the workflow) ----
 # rustc 1.94.0's bootstrap fetches a prebuilt CI LLVM tarball; the URL 404s because
 # old CI artifacts get pruned from ci-artifacts.rust-lang.org. Disable download-ci-llvm
