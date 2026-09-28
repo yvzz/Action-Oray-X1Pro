@@ -54,6 +54,21 @@ else
 	echo "WARNING: failed to clone luci-app-easytier; firmware will build without EasyTier" >&2
 fi
 
+# ---- VNT2 (whzhni1/luci-app-vnt2: 纯 LuCI 界面包) ----
+# 仓库顶层仅含单一包目录 luci-app-vnt2/（Makefile + htdocs + po + root），
+# 是 ucode + JS 的纯界面包（LUCI_PKGARCH:=all），不含 vnt/vnts 核心程序。
+# 核心二进制 vnt2_cli / vnt2_web / vnt2_ctrl / vnts2 由设备在 LuCI 界面「更新」时
+# 从 GitHub / Gitee / GitLab / Cloudflare 镜像自行下载（架构自动探测为 aarch64）。
+# 依赖 luci-base + luci-compat + kmod-tun（三份 config 均已具备）；
+# clone 失败仅告警不阻塞，此时 make defconfig 会静默丢弃对应 CONFIG_PACKAGE_* 符号。
+VNT2_TARGET="$OPENWRT/package/luci-app-vnt2"
+rm -rf "$VNT2_TARGET"
+if git clone --depth 1 https://github.com/whzhni1/luci-app-vnt2 "$VNT2_TARGET"; then
+	echo "[ok] cloned luci-app-vnt2 (纯界面包) into package/"
+else
+	echo "WARNING: failed to clone luci-app-vnt2; firmware will build without VNT2" >&2
+fi
+
 # ---- Rust host-compile fix (merged from diy-part2.sh — that script is NOT called by the workflow) ----
 # rustc 1.94.0's bootstrap fetches a prebuilt CI LLVM tarball; the URL 404s because
 # old CI artifacts get pruned from ci-artifacts.rust-lang.org. Disable download-ci-llvm
