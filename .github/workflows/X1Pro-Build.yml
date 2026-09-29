@@ -433,7 +433,8 @@ jobs:
       - name: Generate Release
         id: release
         run: |
-          RELEASE_TAG="X1Pro-${{ env.BUILD_TIME }}"
+          # 固定 tag：每个 config 一个，每次构建删除旧 Release 后复用同一个 tag
+          RELEASE_TAG="X1Pro-v24.10-${{ env.PROXY }}"
           echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
           echo "Release: $RELEASE_TAG"
 
@@ -454,16 +455,17 @@ jobs:
           # 将发布说明写入 release.txt（softprops/action-gh-release 用 body_path 读取）
           {
             printf '## ImmortalWrt X1Pro Firmware\n\n'
-            printf '**设备:** Oray X1 Pro\n'
-            printf '**代理:** %s\n' "${{ env.PROXY }}"
-            printf '**分支:** openwrt-24.10-6.6\n'
+            printf '**目标设备:** Oray X1 Pro\n'
+            printf '**代理版本:** %s\n' "${{ env.PROXY }}"
+            printf '**固定标签:** %s\n' "$RELEASE_TAG"
+            printf '**分支版本:** openwrt-24.10-6.6\n'
             printf '**构建开始:** %s\n' "$BUILD_START_TIME"
             printf '**构建结束:** %s\n' "$BUILD_END_TIME"
             if [ -n "$DURATION_LINE" ]; then
               printf '%s\n' "$DURATION_LINE"
             fi
             if [ -n "${{ env.BUILD_NOTES }}" ]; then
-              printf '\n**备注:** %s\n' "${{ env.BUILD_NOTES }}"
+              printf '\n**本次备注:** %s\n' "${{ env.BUILD_NOTES }}"
             fi
             printf '\n## 固件\n'
             for f in $GITHUB_WORKSPACE/firmware_collection/*.bin; do
@@ -478,6 +480,33 @@ jobs:
           echo "=== release.txt ==="
           cat release.txt
           echo "status=success" >> $GITHUB_OUTPUT
+
+      - name: Delete existing release & tag (rolling fixed tag)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.release.outputs.release_tag }}"
+          REPO="${{ github.repository }}"
+
+          if [ -z "$TAG" ]; then
+            echo "ERROR: empty release tag" >&2
+            exit 1
+          fi
+
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            echo "Deleting existing release: $TAG"
+            gh release delete "$TAG" --yes --cleanup-tag --repo "$REPO"
+          else
+            echo "No existing release for $TAG"
+          fi
+
+          # 兜底：Release 已不存在但 tag 残留（否则后面发布同 tag 会挂到旧 tag 上）
+          if gh api "repos/$REPO/git/ref/tags/$TAG" >/dev/null 2>&1; then
+            echo "Deleting leftover tag: $TAG"
+            gh api --method DELETE "repos/$REPO/git/refs/tags/$TAG" --silent
+          fi
+
+          echo "Tag $TAG is free for re-publish"
 
       - name: Upload to Release
         uses: softprops/action-gh-release@v3
@@ -523,9 +552,9 @@ jobs:
             由 GitHub Actions 自动发送
           attachments: firmware_collection/*.bin
 
-  # ── 清理：run 保留 7 天（失败 run 立即删）/ 旧 release 保留 7 天 / 孤儿 tag 全删 ──
+  # ── 清理：run 保留 7 天（失败 run 立即删）/ 旧式日期 tag 的 release 全删（固定 tag 保留）/ 孤儿 tag 全删 ──
   cleanup:
-    name: Cleanup (keep 7 days)
+    name: Cleanup
     needs: [build, release, email]
     if: ${{ !cancelled() && needs.build.result != 'skipped' }}
     runs-on: ubuntu-24.04
@@ -580,40 +609,32 @@ jobs:
           done < "$RUNS"
           echo "Deleted $deleted run(s); kept $kept"
 
-      - name: Delete old releases (keep last 7 days)
+      - name: Delete legacy date-tag releases (fixed tags are kept)
         run: |
           set -uo pipefail
-          RETENTION_DAYS=7
-          CUTOFF_TS=$(date -u -d "$RETENTION_DAYS days ago" +%s)
-          echo "Keeping releases published after $(date -u -d @"$CUTOFF_TS" '+%Y-%m-%d %H:%M:%S UTC') (last ${RETENTION_DAYS} days)"
           REL_LIST="$RUNNER_TEMP/releases.tsv"
           gh api "repos/$REPO/releases?per_page=100" --paginate \
             --jq '.[] | [.id, .tag_name, (.published_at // .created_at)] | @tsv' > "$REL_LIST" || true
-          total=$(wc -l < "$REL_LIST")
-          echo "Found $total release(s)"
+          echo "Found $(wc -l < "$REL_LIST") release(s)"
           deleted=0
           kept=0
           while IFS=$'\t' read -r rid tag created; do
             [ -z "$tag" ] && continue
-            created_ts=$(date -u -d "$created" +%s 2>/dev/null || true)
-            if [ -z "$created_ts" ]; then
-              echo "  keep:   $tag (无法解析发布时间的 '$created'，保守保留)"
-              kept=$((kept+1))
-              continue
-            fi
-            if [ "$created_ts" -ge "$CUTOFF_TS" ]; then
-              echo "  keep:   $tag (published $created)"
-              kept=$((kept+1))
-              continue
-            fi
-            echo "Deleting release $tag (id $rid, published $created)"
-            if gh release delete "$tag" --yes --cleanup-tag --repo "$REPO"; then
-              deleted=$((deleted+1))
+            # 旧式日期 tag：X1Pro-<8位日期>-<6位时间> —— 历史产物，全删
+            # 固定 tag：X1Pro-v24.10-<proxy> —— 永不删除
+            if [[ "$tag" =~ ^X1Pro-[0-9]{8}-[0-9]{6}$ ]]; then
+              echo "Deleting legacy release $tag (id $rid, published $created)"
+              if gh release delete "$tag" --yes --cleanup-tag --repo "$REPO"; then
+                deleted=$((deleted+1))
+              else
+                echo "  warn: failed to delete release $tag"
+              fi
             else
-              echo "  warn: failed to delete release $tag"
+              echo "  keep:   $tag (fixed tag, published $created)"
+              kept=$((kept+1))
             fi
           done < "$REL_LIST"
-          echo "Deleted $deleted release(s); kept $kept"
+          echo "Deleted $deleted legacy release(s); kept $kept"
 
       - name: Delete orphan tags (all without release)
         run: |
