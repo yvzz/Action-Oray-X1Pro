@@ -454,28 +454,6 @@ jobs:
           name: X1Pro-2512-${{ env.PROXY }}-${{ env.BUILD_TIME }}
           path: firmware_collection/*.bin
 
-      # ── 邮件发送固件 ──
-      - name: Send firmware via email
-        uses: dawidd6/action-send-mail@v22
-        if: steps.compile.outputs.status == 'success' && (github.event_name != 'workflow_dispatch' || inputs.email == true)
-        with:
-          server_address: smtp.qq.com
-          server_port: 465
-          username: ${{ secrets.MAIL_USER }}
-          password: ${{ secrets.MAIL_PASS }}
-          subject: 'X1Pro-2512 固件 [${{ env.PROXY }}] ${{ env.BUILD_TIME }}'
-          to: yvzz@qq.com
-          from: 'X1Pro Build <${{ secrets.MAIL_USER }}>'
-          body: |
-            X1Pro-2512 固件编译完成
-
-            代理版本: ${{ env.PROXY }}
-            构建时间: ${{ env.BUILD_TIME }}
-            固件文件见附件，通过 sysupgrade 刷入。
-
-            由 GitHub Actions 自动发送
-          attachments: firmware_collection/*.bin
-
   release:
     name: Release X1 Pro
     needs: build
@@ -581,6 +559,18 @@ jobs:
           name: X1Pro-2512-${{ env.PROXY }}-${{ needs.build.outputs.build_time }}
           path: firmware_collection
 
+      # 邮件传输链路曾出现固件二进制被静默改坏（metadata CRC 不匹配）。
+      # 改为发 zip：解压时 CRC 校验不过会当场报错，损坏从"刷机后才发作"变成"解压即发现"。
+      - name: Package firmware into zip (with sha256)
+        run: |
+          cd firmware_collection
+          sha256sum ./*.bin > sha256sums.txt
+          zip -X ../firmware_bundle.zip ./*.bin sha256sums.txt
+          unzip -t ../firmware_bundle.zip
+          cd ..
+          echo "Bundle contents:"
+          unzip -l firmware_bundle.zip
+
       - name: Send firmware via email
         uses: dawidd6/action-send-mail@v22
         with:
@@ -596,10 +586,12 @@ jobs:
 
             代理版本: ${{ env.PROXY }}
             构建时间: ${{ env.BUILD_TIME }}
-            固件文件见附件，通过 sysupgrade 刷入。
+            固件已打包为 zip 附件（内含 sha256sums.txt 校验文件）。
+            解压报错 = 附件传输损坏，请勿刷入；解压正常后用 sha256sums.txt
+            核对（shasum -a 256 -c sha256sums.txt），再通过 sysupgrade 刷入。
 
             由 GitHub Actions 自动发送
-          attachments: firmware_collection/*.bin
+          attachments: firmware_bundle.zip
 
   # ── 清理：run 保留 7 天（失败 run 立即删）/ 旧式日期 tag 的 release 全删（固定 tag 保留）/ 孤儿 tag 全删 ──
   cleanup:
