@@ -300,15 +300,13 @@ jobs:
             echo "[ok] files-vpn/ overlay 已合并 ($(find "$GITHUB_WORKSPACE/files-vpn" -type f | wc -l) 文件)"
           fi
 
-          # 编译时间标记（固件内 /root/BuildInfo.txt，精确到分），对齐 24.10 行为
+          # 编译时间标记（固件内 /root/buildinfo.txt，精确到分），对齐 24.10 行为
           mkdir -p files/root
           {
-            echo "BUILD_TIME=${BUILD_TIME}"
-            echo "BUILD_DATE=${BUILD_TIME%%-*}"
-            echo "PROXY=${PROXY}"
-            date '+%Y-%m-%d %H:%M %Z'
-          } > files/root/BuildInfo.txt
-          echo "[ok] 编译时间标记已写入 /root/BuildInfo.txt"
+            echo "编译版本：${PROXY}"
+            echo "编译时间：$(date '+%Y-%m-%d %H:%M %Z')"
+          } > files/root/buildinfo.txt
+          echo "[ok] 编译时间标记已写入 /root/buildinfo.txt"
 
           make defconfig
 
@@ -566,7 +564,7 @@ jobs:
             由 GitHub Actions 自动发送
           attachments: firmware_collection/*.bin
 
-  # ── 清理：删旧 workflow runs / 旧 release（保留最新 1 个）/ 孤儿 tag ──
+  # ── 清理：run 保留 7 天（失败 run 立即删）/ 旧 release 保留 7 天 / 孤儿 tag 全删 ──
   cleanup:
     name: Cleanup (keep 7 days)
     needs: [build, release, email]
@@ -580,25 +578,48 @@ jobs:
       REPO: ${{ github.repository }}
       CURRENT_RUN_ID: ${{ github.run_id }}
     steps:
-      - name: Delete old workflow runs (all)
+      - name: Delete old workflow runs (keep 7 days, failures always)
         run: |
           set -uo pipefail
+          RETENTION_DAYS=7
+          CUTOFF_TS=$(date -u -d "$RETENTION_DAYS days ago" +%s)
+          echo "Keeping non-failed runs newer than $(date -u -d @"$CUTOFF_TS" '+%Y-%m-%d %H:%M:%S UTC') (last ${RETENTION_DAYS} days); failed runs are deleted regardless of age"
           WORKFLOW_ID=$(gh api "repos/$REPO/actions/runs/$CURRENT_RUN_ID" --jq '.workflow_id')
           if ! [[ "$WORKFLOW_ID" =~ ^[0-9]+$ ]]; then
             echo "ERROR: invalid workflow_id: $WORKFLOW_ID" >&2
             exit 1
           fi
+          RUNS="$RUNNER_TEMP/runs.tsv"
+          gh api "repos/$REPO/actions/workflows/$WORKFLOW_ID/runs?per_page=100" --paginate \
+            --jq '.workflow_runs[] | select(.status=="completed") | [.id, (.conclusion // "unknown"), .created_at] | @tsv' > "$RUNS" || true
+          echo "Found $(wc -l < "$RUNS") completed run(s)"
           deleted=0
-          while read -r rid; do
+          kept=0
+          while IFS=$'\t' read -r rid concl created; do
+            [ -z "$rid" ] && continue
             [ "$rid" = "$CURRENT_RUN_ID" ] && continue
-            echo "Deleting workflow run $rid"
+            # 失败 run：不看时间，直接删
+            if [ "$concl" != "failure" ]; then
+              created_ts=$(date -u -d "$created" +%s 2>/dev/null || true)
+              if [ -z "$created_ts" ]; then
+                echo "  keep:   run $rid ($concl, 无法解析创建时间 '$created'，保守保留)"
+                kept=$((kept+1))
+                continue
+              fi
+              if [ "$created_ts" -ge "$CUTOFF_TS" ]; then
+                echo "  keep:   run $rid ($concl, created $created)"
+                kept=$((kept+1))
+                continue
+              fi
+            fi
+            echo "Deleting run $rid ($concl, created $created)"
             if gh api --method DELETE "repos/$REPO/actions/runs/$rid" --silent; then
               deleted=$((deleted+1))
             else
               echo "  warn: failed to delete run $rid"
             fi
-          done < <(gh api "repos/$REPO/actions/workflows/$WORKFLOW_ID/runs?per_page=100" --paginate --jq '.workflow_runs[] | select(.status=="completed") | .id')
-          echo "Deleted $deleted workflow run(s)"
+          done < "$RUNS"
+          echo "Deleted $deleted run(s); kept $kept"
 
       - name: Delete old releases (keep last 7 days)
         run: |
