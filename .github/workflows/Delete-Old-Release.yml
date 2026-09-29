@@ -16,18 +16,10 @@ on:
         default: true
 
       do_releases:
-        description: '清理旧 Release'
+        description: '清理旧式日期 tag 的 Release（固定 tag 永不删）'
         required: false
         type: boolean
         default: false
-
-
-      # ─── Release 参数 ───
-      release_retention_days:
-        description: 'Release 保留天数（天），0=全部删除'
-        required: false
-        type: number
-        default: 7
 
 
 
@@ -101,22 +93,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Delete old releases
+      - name: Delete legacy date-tag releases
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RETENTION: ${{ inputs.release_retention_days }}
         run: |
-          RETENTION=${RETENTION:-7}
-          CUTOFF=$(date -d "$RETENTION days ago" +%s)
-          echo "保留最近 ${RETENTION} 天的 Release"
+          echo "只删除旧式日期 tag（X1Pro-<8位日期>-<6位时间>）的 Release"
+          echo "固定 tag（X1Pro-v25.12-*）的 Release 永不删除"
 
           releases=$(gh release list \
             --exclude-drafts \
+            --limit 200 \
             --json tagName,publishedAt \
             --jq '.[] | "\(.publishedAt)|\(.tagName)"')
 
           if [ -z "$releases" ]; then
-            echo "没有可删除的 Release"
+            echo "没有 Release"
             exit 0
           fi
 
@@ -125,17 +116,12 @@ jobs:
 
           while IFS='|' read -r published tag; do
             [ -z "$tag" ] && continue
-            published_ts=$(date -d "$published" +%s 2>/dev/null)
-            if [ -z "$published_ts" ]; then
-              echo "  跳过: $tag (无法解析日期)"
-              continue
-            fi
-            if [ "$published_ts" -lt "$CUTOFF" ]; then
+            if [[ "$tag" =~ ^X1Pro-[0-9]{8}-[0-9]{6}$ ]]; then
               echo "  删除: $tag (发布于 $published)"
-              gh release delete "$tag" --yes --repo ${{ github.repository }}
+              gh release delete "$tag" --yes --cleanup-tag --repo ${{ github.repository }}
               deleted=$((deleted + 1))
             else
-              echo "  保留: $tag (发布于 $published)"
+              echo "  保留: $tag (固定 tag / 其他)"
               kept=$((kept + 1))
             fi
           done <<< "$releases"
