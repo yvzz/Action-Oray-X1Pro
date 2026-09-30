@@ -1,6 +1,6 @@
 #!/bin/sh
 # ============================================================
-# X1Pro VPN 脚本下载器
+# Oray X1 Pro 运维脚本下载器
 # 无参数: 下载 down-scripts.sh 引导脚本 (推荐)
 # 带 *.sh 参数: 仅下载该文件到 /root/
 # 用法:  sh /root/get-scripts.sh [xxx.sh]
