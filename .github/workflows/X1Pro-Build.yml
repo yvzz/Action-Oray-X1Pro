@@ -219,7 +219,7 @@ jobs:
       - name: Free Disk Space
         uses: jlumbroso/free-disk-space@main
         with:
-          tool-cache: true
+          preinstalled-runtimes: true
           android: true
           dotnet: true
           haskell: true
@@ -536,7 +536,7 @@ jobs:
       # 改为发 zip：解压时 CRC 校验不过会当场报错，损坏从"刷机后才发作"变成"解压即发现"。
       - name: Package firmware into zip (with sha256)
         run: |
-          ZIP_NAME="X1Pro_Firmware-2410-${BUILD_TIME}.zip"
+          ZIP_NAME="X1Pro-2410-${BUILD_TIME}.zip"
           echo "Bundle: $ZIP_NAME"
           cd firmware_collection
           sha256sum ./*.bin > sha256sums.txt
@@ -566,7 +566,7 @@ jobs:
             核对（shasum -a 256 -c sha256sums.txt），再通过 sysupgrade 刷入。
 
             由 GitHub Actions 自动发送
-          attachments: X1Pro_Firmware-2410-${{ env.BUILD_TIME }}.zip
+          attachments: X1Pro-2410-${{ env.BUILD_TIME }}.zip
 
   # ── 清理：run 保留 7 天（失败 run 立即删）/ 旧式日期 tag 的 release 全删（固定 tag 保留）/ 孤儿 tag 全删 ──
   cleanup:
