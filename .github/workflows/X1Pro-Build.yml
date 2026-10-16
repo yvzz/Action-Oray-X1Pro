@@ -319,10 +319,10 @@ jobs:
           make download -j"$NPROC"
 
           if [ "${{ inputs.verbose }}" = "true" ]; then
-            make -j1 V=s
-          elif ! make -j"$NPROC"; then
+            make -j1 V=s CC="ccache gcc" CXX="ccache g++"
+          elif ! make -j"$NPROC" CC="ccache gcc" CXX="ccache g++"; then
             echo "Parallel build failed; retrying with one job"
-            make -j1 V=s
+            make -j1 V=s CC="ccache gcc" CXX="ccache g++"
           fi
 
           mapfile -t SYSUPGRADES < <(find bin/targets -type f \
