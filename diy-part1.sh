@@ -29,7 +29,7 @@ for repo in luci-theme-aurora luci-app-aurora-config luci-app-bandix openwrt-ban
     git clone --depth=1 "$url" "$OPENWRT/package/$repo"
   fi
 done
-echo "  → aurora + pushbot packages cloned""
+echo "  → aurora + pushbot packages cloned"
 
 # 1b2. NPC 升级到 0.34（djylb/nps-openwrt）
 #   上游 immortalwrt/packages 的 net/nps 是 Go 源码编译、版本停在 0.26.24，
