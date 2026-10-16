@@ -111,6 +111,47 @@ else
 	echo "WARNING: failed to clone nps-openwrt; npc stays at feeds 0.26.24 without LuCI UI" >&2
 fi
 
+# ---- Fix sysupgrade failure on oray,x1pro ----
+# U-Boot 未在设备树 chosen 节点设置 rootdisk 属性,
+# 导致 export_fitblk_bootdev() 检测失败 → CI_METHOD 为空 → fit_do_upgrade return 1 → 固件未写入.
+# 补丁: CI_METHOD 为空时 fallback 到 UBI 默认参数 (ubi/kernel/rootfs).
+# 关键: 源码树里存在【多个】fit.sh:
+#   - 通用 OpenWrt fit.sh (不含 export_fitblk_bootdev, 补丁对其无效)
+#   - mt798x 专用 fit.sh (含 export_fitblk_bootdev + CI_METHOD, 才是本机真正的升级逻辑)
+# 必须定位到【含 export_fitblk_bootdev】的那个并打补丁, 否则会命中通用版而静默跳过.
+FIT_SH=""
+for cand in \
+  "$OPENWRT/target/linux/mediatek/base-files/lib/upgrade/fit.sh" \
+  "$OPENWRT/target/linux/mediatek/filogic/base-files/lib/upgrade/fit.sh" \
+  "$OPENWRT/target/linux/mediatek/mt798x/base-files/lib/upgrade/fit.sh" \
+  "$OPENWRT/package/base-files/files/lib/upgrade/fit.sh" \
+  "$OPENWRT/feeds/base-files/files/lib/upgrade/fit.sh" ; do
+	if [ -f "$cand" ] && grep -q "export_fitblk_bootdev" "$cand"; then
+		FIT_SH="$cand"; break
+	fi
+done
+# 兜底: 全盘搜索含 export_fitblk_bootdev 的 fit.sh (排除 build_dir / staging_dir 产物)
+if [ -z "$FIT_SH" ]; then
+	FIT_SH=$(find "$OPENWRT" -name fit.sh \
+		-not -path "*/build_dir/*" -not -path "*/staging_dir/*" 2>/dev/null \
+		-exec grep -l "export_fitblk_bootdev" {} \; | head -1)
+fi
+
+if [ -n "$FIT_SH" ]; then
+	if grep -q 'CI_ROOTPART="rootfs"' "$FIT_SH"; then
+		echo "[ok] fit.sh: already patched ($FIT_SH)"
+	else
+		sed -i 's/\[ -n "\$CI_METHOD" \] || return 1/[ -n "$CI_METHOD" ] || { CI_METHOD="ubi"; CI_UBIPART="ubi"; CI_KERNPART="kernel"; CI_ROOTPART="rootfs"; }/' "$FIT_SH"
+		if grep -q 'CI_ROOTPART="rootfs"' "$FIT_SH"; then
+			echo "[ok] fit.sh: patched ($FIT_SH)"
+		else
+			echo "WARNING: fit.sh patch failed (pattern not found in $FIT_SH)" >&2
+		fi
+	fi
+else
+	echo "WARNING: fit.sh not found (含 export_fitblk_bootdev), skipping sysupgrade fix" >&2
+fi
+
 # ---- Rust host-compile fix (merged from diy-part2.sh — that script is NOT called by the workflow) ----
 # rustc 1.94.0's bootstrap fetches a prebuilt CI LLVM tarball; the URL 404s because
 # old CI artifacts get pruned from ci-artifacts.rust-lang.org. Disable download-ci-llvm
