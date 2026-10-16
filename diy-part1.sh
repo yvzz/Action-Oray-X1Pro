@@ -69,6 +69,20 @@ else
 	echo "WARNING: failed to clone luci-app-vnt2; firmware will build without VNT2" >&2
 fi
 
+# ---- 全能推送 (zzsj0928/luci-app-pushbot) ----
+# 仓库顶层为单一包 luci-app-pushbot/（Makefile + htdocs + po + root），
+# v6.01 起纯 ucode 架构（LUCI_PKGARCH:=all），平台无关，需 LuCI ≥ 23.05。
+# clone 到 package/ 由 buildroot 自动扫描。
+# 依赖：iputils-arping + curl + jq（三份 config 均已启用 curl；arping 和 jq 需显式选中）。
+# clone 失败仅告警不阻塞，此时 make defconfig 会静默丢弃 CONFIG_PACKAGE_luci-app-pushbot 符号。
+PUSHBOT_TARGET="$OPENWRT/package/luci-app-pushbot"
+rm -rf "$PUSHBOT_TARGET"
+if git clone --depth 1 https://github.com/zzsj0928/luci-app-pushbot "$PUSHBOT_TARGET"; then
+	echo "[ok] cloned luci-app-pushbot (全能推送) into package/"
+else
+	echo "WARNING: failed to clone luci-app-pushbot; firmware will build without PushBot" >&2
+fi
+
 # ---- NPC 升级到 0.34 (djylb/nps-openwrt) ----
 # 上游 immortalwrt/packages 的 net/nps 是 Go 源码编译、版本停在 0.26.24，且同一个包
 # 同时产出 npc + nps。改用 djylb 的 npc 包（0.34.7，下载官方预编译二进制；
