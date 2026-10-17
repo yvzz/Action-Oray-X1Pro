@@ -83,6 +83,19 @@ else
 	echo "WARNING: failed to clone luci-app-pushbot; firmware will build without PushBot" >&2
 fi
 
+# ---- Cloud DDNS (DNSPod + AliDNS 合一, 仓库内置 ucode 插件) ----
+# 纯 ucode 实现，兼容 OpenWrt 24.10+ 和 ImmortalWrt 25.12+。
+# 同时支持 DNSPod (腾讯云) 和 AliDNS (阿里云) DDNS。
+# 基于 honwen/luci-app-aliddns + samhjn/luci-app-dnspod 合并改编。
+# 包从仓库工作树拷贝（非 clone），由 buildroot 自动扫描。
+CLOUDDDNS_TARGET="$OPENWRT/package/luci-app-cloud-ddns"
+if [ -d "$CLOUDDDNS_TARGET" ]; then
+	echo "[info] luci-app-cloud-ddns already exists in package/"
+else
+	cp -r "$WORKSPACE/luci-app-cloud-ddns" "$CLOUDDDNS_TARGET"
+	echo "[ok] copied luci-app-cloud-ddns into package/"
+fi
+
 # ---- NPC 升级到 0.34 (djylb/nps-openwrt) ----
 # 上游 immortalwrt/packages 的 net/nps 是 Go 源码编译、版本停在 0.26.24，且同一个包
 # 同时产出 npc + nps。改用 djylb 的 npc 包（0.34.7，下载官方预编译二进制；
