@@ -31,12 +31,12 @@ for repo in luci-theme-aurora luci-app-aurora-config luci-app-bandix openwrt-ban
 done
 echo "  → aurora + pushbot packages cloned"
 
-# 1a. Copy luci-app-cloud-ddns from repo into package/
+# 1a. Clone luci-app-cloud-ddns (DNSPod + AliDNS 合一, 纯 ucode)
 if [ -d "$OPENWRT/package/luci-app-cloud-ddns" ]; then
-  echo "  → luci-app-cloud-ddns already exists, skipping"
+  echo "  → luci-app-cloud-ddns already exists, skipping clone"
 else
-  cp -r "$WORKSPACE/luci-app-cloud-ddns" "$OPENWRT/package/luci-app-cloud-ddns"
-  echo "  → luci-app-cloud-ddns copied"
+  git clone --depth 1 https://github.com/yvzz/luci-app-cloud-ddns "$OPENWRT/package/luci-app-cloud-ddns"
+  echo "  → luci-app-cloud-ddns cloned"
 fi
 
 # 1b2. NPC 升级到 0.34（djylb/nps-openwrt）
