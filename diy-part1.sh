@@ -13,7 +13,7 @@ echo "=== DIY Part 1: X1 Pro setup ==="
 # 1. Clone third-party packages into package/ (参照 TR3000)
 #    直接 clone 避免 feeds 分支/index 问题
 mkdir -p "$OPENWRT/package"
-for repo in luci-theme-aurora luci-app-aurora-config luci-app-bandix openwrt-bandix luci-app-easytier luci-app-vnt2 luci-app-pushbot luci-app-dnspod; do
+for repo in luci-theme-aurora luci-app-aurora-config luci-app-bandix openwrt-bandix luci-app-easytier luci-app-vnt2 luci-app-pushbot; do
   if [ -d "$OPENWRT/package/$repo" ]; then
     echo "  → $repo already exists, skipping clone"
   else
@@ -25,12 +25,19 @@ for repo in luci-theme-aurora luci-app-aurora-config luci-app-bandix openwrt-ban
       luci-app-easytier)     url="https://github.com/EasyTier/luci-app-easytier" ;;
       luci-app-vnt2)         url="https://github.com/whzhni1/luci-app-vnt2" ;;
       luci-app-pushbot)      url="https://github.com/zzsj0928/luci-app-pushbot" ;;
-      luci-app-dnspod)        url="https://github.com/ntlf9t/luci-app-dnspod" ;;
     esac
     git clone --depth=1 "$url" "$OPENWRT/package/$repo"
   fi
 done
-echo "  → aurora + pushbot + dnspod packages cloned"
+echo "  → aurora + pushbot packages cloned"
+
+# 1a. Copy luci-app-cloud-ddns from repo into package/
+if [ -d "$OPENWRT/package/luci-app-cloud-ddns" ]; then
+  echo "  → luci-app-cloud-ddns already exists, skipping"
+else
+  cp -r "$WORKSPACE/luci-app-cloud-ddns" "$OPENWRT/package/luci-app-cloud-ddns"
+  echo "  → luci-app-cloud-ddns copied"
+fi
 
 # 1b2. NPC 升级到 0.34（djylb/nps-openwrt）
 #   上游 immortalwrt/packages 的 net/nps 是 Go 源码编译、版本停在 0.26.24，

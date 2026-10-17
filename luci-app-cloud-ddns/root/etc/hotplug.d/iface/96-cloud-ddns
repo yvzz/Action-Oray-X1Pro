@@ -1,0 +1,5 @@
+#!/bin/sh
+# Trigger DDNS update on wan up
+[ "$INTERFACE" = "wan" ] || exit 0
+/etc/init.d/cloud-ddns restart >/dev/null 2>&1 &
+exit 0

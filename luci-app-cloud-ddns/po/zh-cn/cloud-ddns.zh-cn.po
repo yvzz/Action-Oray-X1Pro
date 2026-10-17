@@ -1,0 +1,104 @@
+msgid ""
+msgstr "Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Cloud DDNS"
+msgstr "云 DDNS"
+
+msgid "运行中"
+msgstr "运行中"
+
+msgid "未运行"
+msgstr "未运行"
+
+msgid "检查中..."
+msgstr "检查中..."
+
+msgid "暂无日志"
+msgstr "暂无日志"
+
+msgid "DNSPod 设置"
+msgstr "DNSPod 设置"
+
+msgid "启用 DNSPod"
+msgstr "启用 DNSPod"
+
+msgid "检查间隔(秒)"
+msgstr "检查间隔(秒)"
+
+msgid "解析模式"
+msgstr "解析模式"
+
+msgid "Token 解析"
+msgstr "Token 解析"
+
+msgid "账号解析"
+msgstr "账号解析"
+
+msgid "ID,Token"
+msgstr "ID,Token"
+
+msgid "登录邮箱"
+msgstr "登录邮箱"
+
+msgid "登录密码"
+msgstr "登录密码"
+
+msgid "AliDNS 设置"
+msgstr "AliDNS 设置"
+
+msgid "启用 AliDNS"
+msgstr "启用 AliDNS"
+
+msgid "Access Key ID"
+msgstr "Access Key ID"
+
+msgid "Access Key Secret"
+msgstr "Access Key Secret"
+
+msgid "IP 获取设置"
+msgstr "IP 获取设置"
+
+msgid "IPv4 来源"
+msgstr "IPv4 来源"
+
+msgid "IPv6 来源"
+msgstr "IPv6 来源"
+
+msgid "Internet (公网获取)"
+msgstr "Internet (公网获取)"
+
+msgid "WAN 接口"
+msgstr "WAN 接口"
+
+msgid "域名列表"
+msgstr "域名列表"
+
+msgid "服务商"
+msgstr "服务商"
+
+msgid "记录类型"
+msgstr "记录类型"
+
+msgid "主域名"
+msgstr "主域名"
+
+msgid "子域名"
+msgstr "子域名"
+
+msgid "删除"
+msgstr "删除"
+
+msgid "+ 添加域名"
+msgstr "+ 添加域名"
+
+msgid "保存并应用"
+msgstr "保存并应用"
+
+msgid "重启服务"
+msgstr "重启服务"
+
+msgid "运行日志"
+msgstr "运行日志"
+
+msgid "刷新日志"
+msgstr "刷新日志"
