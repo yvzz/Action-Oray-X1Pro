@@ -40,7 +40,7 @@ on:
         description: 发布到 Release
         required: false
         type: boolean
-        default: false
+        default: true
       email:
         description: 编译成功后固件发送到邮箱
         required: false
@@ -310,6 +310,18 @@ jobs:
 
           make defconfig
 
+          # 验证关键第三方包是否被 defconfig 选中
+          echo "=== Verify third-party packages in .config ==="
+          for pkg in luci-app-pushbot luci-app-cloud-ddns; do
+            if grep -q "CONFIG_PACKAGE_${pkg}=y" .config; then
+              echo "  [OK] ${pkg}=y"
+            else
+              echo "  [WARN] ${pkg} not found in .config!"
+              grep "${pkg}" .config || true
+              ls -la package/${pkg}/Makefile 2>/dev/null || echo "  [ERROR] package/${pkg}/Makefile not found!"
+            fi
+          done
+
           required_device='CONFIG_TARGET_mediatek_filogic_DEVICE_oray_x1pro=y'
           if ! grep -Fqx "$required_device" .config; then
             echo "ERROR: missing device target after defconfig: $required_device" >&2
@@ -457,7 +469,7 @@ jobs:
   release:
     name: Release X1 Pro
     needs: build
-    if: ${{ needs.build.result == 'success' && ((github.event_name == 'workflow_dispatch' && inputs.release == true) || (github.event_name == 'repository_dispatch' && github.event.client_payload.release == true)) }}
+    if: ${{ needs.build.result == 'success' && ((github.event_name == 'push') || (github.event_name == 'schedule') || (github.event_name == 'workflow_dispatch' && inputs.release == true) || (github.event_name == 'repository_dispatch' && github.event.client_payload.release == true)) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
