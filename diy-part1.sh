@@ -101,12 +101,10 @@ if [ -f "$BANDIX_MK" ]; then
   fi
 fi
 
-# 2. Fix sysupgrade failure on oray,x1pro
-#    U-Boot 未在设备树 chosen 节点设置 rootdisk 属性,
-#    导致 export_fitblk_bootdev() 检测失败 → CI_METHOD 为空 → fit_do_upgrade return 1 → 固件未写入.
-#    修复方式: 通过仓库 files/ overlay 覆盖 /lib/upgrade/fit.sh (见 files/lib/upgrade/fit.sh),
-#    该文件已在 CI_METHOD 为空时 fallback 到 UBI 默认参数, 不依赖源码树路径探测, 更可靠.
-#    (早期在 diy-part1.sh 里 sed 补丁源码树 fit.sh 的方式因路径探测不稳定已弃用)
+# 2. sysupgrade 说明 (oray,x1pro)
+#    platform.sh 已为 oray,x1pro 显式设置 CI_UBIPART=ubi / CI_KERNPART=kernel /
+#    CI_ROOTPART=rootfs 并直接调用 nand_do_upgrade，不经过 fit_do_upgrade，
+#    故不需要 /lib/upgrade/fit.sh（该 files/ overlay 已于 2026-10-18 移除）。
 
 # DTS/filogic.mk/02_network/platform.sh/MAC fix 已全部集成至上游源码
 # 仓库路径: yvzz/immortalwrt-mt798x-6.6 openwrt-24.10-6.6 branch
