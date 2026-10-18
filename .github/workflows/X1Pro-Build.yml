@@ -279,17 +279,6 @@ jobs:
           cp $GITHUB_WORKSPACE/$FEEDS_CONF .
           ./scripts/feeds update -a
           ./scripts/feeds install -a
-          # DIY part1: clone cloud-ddns to package/ then re-run make defconfig to include it
-          chmod +x $GITHUB_WORKSPACE/$DIY_P1_SH
-          $GITHUB_WORKSPACE/$DIY_P1_SH
-          make defconfig
-          # Verify cloud-ddns in .config
-          if grep -q "CONFIG_PACKAGE_luci-app-cloud-ddns=y" .config; then
-            echo "  [OK] luci-app-cloud-ddns=y"
-          else
-            echo "  [ERROR] luci-app-cloud-ddns NOT in .config!"
-            exit 1
-          fi
 
       # ── Swap + 编译环境准备 ──
       - name: Prepare build environment
