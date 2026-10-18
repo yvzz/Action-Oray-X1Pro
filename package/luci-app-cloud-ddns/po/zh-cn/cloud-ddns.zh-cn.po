@@ -102,3 +102,12 @@ msgstr "运行日志"
 
 msgid "刷新日志"
 msgstr "刷新日志"
+
+msgid "服务状态"
+msgstr "服务状态"
+
+msgid "保存成功"
+msgstr "保存成功"
+
+msgid "保存失败"
+msgstr "保存失败"
