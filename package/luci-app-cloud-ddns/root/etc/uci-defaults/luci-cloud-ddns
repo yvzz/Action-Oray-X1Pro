@@ -1,0 +1,5 @@
+#!/bin/sh
+# uci-defaults: register cloud-ddns
+[ -f /etc/config/cloud-ddns ] || exit 0
+/etc/init.d/cloud-ddns enable >/dev/null 2>&1
+exit 0

@@ -1,0 +1,211 @@
+{% import { cursor } from 'uci' %}
+{% import { readfile } from 'fs' %}
+{% let uci = cursor() %}
+{% include('header') %}
+<script type="text/javascript">//<![CDATA[
+
+function CD_updateStatus() {
+	XHR.get('<%=luci.http.build_url("admin/services/cloud-ddns/status")%>', null, function(x, d) {
+		var el = document.getElementById('cd_status');
+		if (!el) return;
+		var running = d && d.running;
+		el.innerHTML = running
+			? '<span style="color:green;font-weight:bold">● <%:运行中%></span>'
+			: '<span style="color:red;font-weight:bold">● <%:未运行%></span>';
+	});
+}
+
+function CD_loadLog() {
+	XHR.get('<%=luci.http.build_url("admin/services/cloud-ddns/log")%>', null, function(x) {
+		var ta = document.getElementById('cd_log');
+		if (!ta) return;
+		var log = x.responseText || '';
+		var lines = log.trim().split('\n');
+		ta.value = (lines.length === 0 || (lines.length === 1 && lines[0] === '')) ? '<%:暂无日志%>' : lines.slice(-100).join('\n');
+	});
+}
+
+function CD_restart() {
+	XHR.get('<%=luci.http.build_url("admin/services/cloud-ddns/restart")%>', null, function() {
+		setTimeout(function() { CD_updateStatus(); CD_loadLog(); }, 2000);
+	});
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+	CD_updateStatus();
+	CD_loadLog();
+	setInterval(CD_updateStatus, 30000);
+	CD_toggleDnspodMode();
+	document.getElementById('dnspod_mode').addEventListener('change', CD_toggleDnspodMode);
+});
+
+function CD_toggleDnspodMode() {
+	var mode = document.getElementById('dnspod_mode').value;
+	document.getElementById('dnspod_token_row').style.display = (mode === 'token') ? '' : 'none';
+	document.getElementById('dnspod_email_row').style.display = (mode === 'login') ? '' : 'none';
+	document.getElementById('dnspod_pass_row').style.display = (mode === 'login') ? '' : 'none';
+}
+
+//]]></script>
+
+<div style="display:flex;align-items:center;gap:10px;margin-bottom:15px">
+	<h2 style="margin:0"><%:Cloud DDNS%></h2>
+	<span id="cd_status"><span style="color:gray"><%:检查中...%></span></span>
+</div>
+
+<form id="cd_form" onsubmit="return CD_save(event)">
+	<div class="cbi-map">
+
+		<h3><%:DNSPod 设置%></h3>
+		<div class="cbi-section">
+			<div class="cbi-value">
+				<label class="cbi-value-title"><%:启用 DNSPod%></label>
+				<div class="cbi-value-field">
+					<input type="checkbox" name="dnspod_enabled" value="1" <%=uci.get_first('cloud-ddns', 'dnspod', 'enabled') == '1' ? 'checked' : ''%> />
+				</div>
+			</div>
+			<div class="cbi-value">
+				<label class="cbi-value-title"><%:检查间隔(秒)%></label>
+				<div class="cbi-value-field">
+					<input type="text" name="dnspod_time" value="<%=uci.get_first('cloud-ddns', 'dnspod', 'time') ?? '600'%>" style="width:120px" />
+				</div>
+			</div>
+			<div class="cbi-value">
+				<label class="cbi-value-title"><%:解析模式%></label>
+				<div class="cbi-value-field">
+					<select name="dnspod_mode" id="dnspod_mode">
+						<option value="token" <%=uci.get_first('cloud-ddns', 'dnspod', 'mode') != 'login' ? 'selected' : ''%>><%:Token 解析%></option>
+						<option value="login" <%=uci.get_first('cloud-ddns', 'dnspod', 'mode') == 'login' ? 'selected' : ''%>><%:账号解析%></option>
+					</select>
+				</div>
+			</div>
+			<div class="cbi-value" id="dnspod_token_row">
+				<label class="cbi-value-title"><%:ID,Token%></label>
+				<div class="cbi-value-field">
+					<input type="text" name="dnspod_artoken" value="<%=uci.get_first('cloud-ddns', 'dnspod', 'artoken')%>" style="width:300px" placeholder="12345,abcdefg" />
+				</div>
+			</div>
+			<div class="cbi-value" id="dnspod_email_row" style="display:none">
+				<label class="cbi-value-title"><%:登录邮箱%></label>
+				<div class="cbi-value-field">
+					<input type="text" name="dnspod_login_email" value="<%=uci.get_first('cloud-ddns', 'dnspod', 'login_email')%>" style="width:250px" />
+				</div>
+			</div>
+			<div class="cbi-value" id="dnspod_pass_row" style="display:none">
+				<label class="cbi-value-title"><%:登录密码%></label>
+				<div class="cbi-value-field">
+					<input type="password" name="dnspod_login_password" value="<%=uci.get_first('cloud-ddns', 'dnspod', 'login_password')%>" style="width:250px" />
+				</div>
+			</div>
+		</div>
+
+		<h3><%:AliDNS 设置%></h3>
+		<div class="cbi-section">
+			<div class="cbi-value">
+				<label class="cbi-value-title"><%:启用 AliDNS%></label>
+				<div class="cbi-value-field">
+					<input type="checkbox" name="ali_enabled" value="1" <%=uci.get_first('cloud-ddns', 'alidns', 'enabled') == '1' ? 'checked' : ''%> />
+				</div>
+			</div>
+			<div class="cbi-value">
+				<label class="cbi-value-title"><%:Access Key ID%></label>
+				<div class="cbi-value-field">
+					<input type="text" name="ali_app_key" value="<%=uci.get_first('cloud-ddns', 'alidns', 'app_key')%>" style="width:300px" />
+				</div>
+			</div>
+			<div class="cbi-value">
+				<label class="cbi-value-title"><%:Access Key Secret%></label>
+				<div class="cbi-value-field">
+					<input type="password" name="ali_app_secret" value="<%=uci.get_first('cloud-ddns', 'alidns', 'app_secret')%>" style="width:300px" />
+				</div>
+			</div>
+		</div>
+
+		<h3><%:IP 获取设置%></h3>
+		<div class="cbi-section">
+			<div class="cbi-value">
+				<label class="cbi-value-title"><%:IPv4 来源%></label>
+				<div class="cbi-value-field">
+					<select name="ipv4_source">
+						<option value="internet" <%=uci.get_first('cloud-ddns', 'ip', 'ipv4_source') != 'wan' ? 'selected' : ''%>>Internet (公网获取)</option>
+						<option value="wan" <%=uci.get_first('cloud-ddns', 'ip', 'ipv4_source') == 'wan' ? 'selected' : ''%>>WAN 接口</option>
+					</select>
+				</div>
+			</div>
+			<div class="cbi-value">
+				<label class="cbi-value-title"><%:IPv6 来源%></label>
+				<div class="cbi-value-field">
+					<select name="ipv6_source">
+						<option value="internet" <%=uci.get_first('cloud-ddns', 'ip', 'ipv6_source') != 'wan' ? 'selected' : ''%>>Internet (公网获取)</option>
+						<option value="wan" <%=uci.get_first('cloud-ddns', 'ip', 'ipv6_source') == 'wan' ? 'selected' : ''%>>WAN 接口</option>
+					</select>
+				</div>
+			</div>
+		</div>
+
+		<h3><%:域名列表%></h3>
+		<div class="cbi-section">
+			<table class="table" id="cd_domains">
+				<tr>
+					<th><%:服务商%></th>
+					<th><%:记录类型%></th>
+					<th><%:主域名%></th>
+					<th><%:子域名%></th>
+					<th></th>
+				</tr>
+			{% let i = 0; %}
+			{% uci.foreach('cloud-ddns', 'domain', (s) => { %}
+				<tr>
+					<td><select name="domain_<%=i%>_provider"><option value="dnspod" <%=s.provider != 'alidns' ? 'selected' : ''%>>DNSPod</option><option value="alidns" <%=s.provider == 'alidns' ? 'selected' : ''%>>AliDNS</option></select></td>
+					<td><select name="domain_<%=i%>_record_type"><option value="A" <%=s.record_type != 'AAAA' ? 'selected' : ''%>>A</option><option value="AAAA" <%=s.record_type == 'AAAA' ? 'selected' : ''%>>AAAA</option></select></td>
+					<td><input type="text" name="domain_<%=i%>_main_domain" value="<%=s.main_domain%>" style="width:150px" placeholder="example.com" /></td>
+					<td><input type="text" name="domain_<%=i%>_sub_domain" value="<%=s.sub_domain%>" style="width:100px" placeholder="www" /></td>
+					<td><button type="button" onclick="this.closest('tr').remove()"><%:删除%></button></td>
+				</tr>
+			{% i++; }); %}
+			</table>
+			<button type="button" onclick="CD_addRow()"><%:+ 添加域名%></button>
+		</div>
+
+		<div class="cbi-page-actions">
+			<input type="submit" class="cbi-button cbi-button-apply" value="<%:保存并应用%>" />
+			<input type="button" class="cbi-button" value="<%:重启服务%>" onclick="CD_restart()" />
+		</div>
+	</div>
+</form>
+
+<h3><%:运行日志%></h3>
+<textarea id="cd_log" readonly style="width:100%;height:300px;font-family:monospace;font-size:12px"></textarea>
+<div style="margin-top:10px">
+	<button type="button" onclick="CD_loadLog()"><%:刷新日志%></button>
+</div>
+
+<script type="text/javascript">//<![CDATA[
+function CD_addRow() {
+	var tbl = document.getElementById('cd_domains');
+	var idx = tbl.rows.length - 1;
+	var tr = tbl.insertRow(-1);
+	tr.innerHTML =
+		'<td><select name="domain_' + idx + '_provider"><option value="dnspod">DNSPod</option><option value="alidns">AliDNS</option></select></td>' +
+		'<td><select name="domain_' + idx + '_record_type"><option value="A">A</option><option value="AAAA">AAAA</option></select></td>' +
+		'<td><input type="text" name="domain_' + idx + '_main_domain" style="width:150px" placeholder="example.com" /></td>' +
+		'<td><input type="text" name="domain_' + idx + '_sub_domain" style="width:100px" placeholder="www" /></td>' +
+		'<td><button type="button" onclick="this.closest(\'tr\').remove()">删除</button></td>';
+}
+
+function CD_save(e) {
+	e.preventDefault();
+	var form = document.getElementById('cd_form');
+	var data = new FormData(form);
+	// Also include unchecked checkboxes as '0'
+	if (!data.get('dnspod_enabled')) data.set('dnspod_enabled', '0');
+	if (!data.get('ali_enabled')) data.set('ali_enabled', '0');
+	XHR.post('<%=luci.http.build_url("admin/services/cloud-ddns/save")%>', data, function(x, d) {
+		alert(d && d.ok ? '保存成功' : '保存失败');
+		setTimeout(function() { CD_updateStatus(); CD_loadLog(); }, 2000);
+	});
+	return false;
+}
+//]]></script>
+
+{% include('footer') %}

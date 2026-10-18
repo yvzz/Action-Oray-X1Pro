@@ -1,0 +1,26 @@
+config dnspod 'dnspod'
+	option enabled '0'
+	option time '600'
+	option mode 'token'
+	option artoken ''
+
+config alidns 'alidns'
+	option enabled '0'
+	option app_key ''
+	option app_secret ''
+
+config ip 'ip'
+	option ipv4_source 'internet'
+	option ipv6_source 'internet'
+
+config domain
+	option provider 'dnspod'
+	option record_type 'A'
+	option main_domain 'example.com'
+	option sub_domain 'www'
+
+config domain
+	option provider 'dnspod'
+	option record_type 'AAAA'
+	option main_domain 'example.com'
+	option sub_domain 'ipv6'
