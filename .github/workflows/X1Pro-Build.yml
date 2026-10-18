@@ -210,7 +210,10 @@ jobs:
           echo "build_start_ts=$BUILD_START_TS" >> "$GITHUB_OUTPUT"
 
       - name: Free disk space
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # main
+        # 必须跟 24.10 分支一样引用 @main：pin 的 54081f13 是旧版，只认 tool-cache，
+        # 传 preinstalled-runtimes 会被当成未知输入忽略（runner 报 "Unexpected input(s)"），
+        # 而旧版 tool-cache 默认又是 false，结果预装运行时缓存(~11GB)根本没被清理。
+        uses: jlumbroso/free-disk-space@main
         with:
           preinstalled-runtimes: true
           android: true
