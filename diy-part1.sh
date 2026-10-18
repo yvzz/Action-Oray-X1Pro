@@ -10,6 +10,22 @@ OPENWRT="$WORKSPACE/openwrt"
 
 echo "=== DIY Part 1: X1 Pro setup ==="
 
+# 0. 拷贝内嵌的第三方包源码到构建树 package/
+# 说明：luci-app-cloud-ddns 等包以源码形式内嵌在仓库 $WORKSPACE/package/ 下，
+# 但 openwrt 构建树在 $OPENWRT/package/（/workdir/openwrt/package/），build job
+# 不会整体 copy $GITHUB_WORKSPACE/package/，必须在此显式拷贝，make defconfig
+# 才能扫描到这些包。参考 pushbot 的 clone 机制（也是写入 $OPENWRT/package/）。
+for embedded_pkg in luci-app-cloud-ddns; do
+  src="$WORKSPACE/package/$embedded_pkg"
+  if [ -d "$src" ]; then
+    rm -rf "$OPENWRT/package/$embedded_pkg"
+    cp -a "$src" "$OPENWRT/package/$embedded_pkg"
+    echo "  → embedded $embedded_pkg copied to $OPENWRT/package/"
+  else
+    echo "  [WARN] embedded $embedded_pkg not found at $src" >&2
+  fi
+done
+
 # 1. Clone third-party packages into package/ (参照 TR3000)
 #    直接 clone 避免 feeds 分支/index 问题
 mkdir -p "$OPENWRT/package"
