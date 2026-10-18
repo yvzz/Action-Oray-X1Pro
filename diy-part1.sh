@@ -4,6 +4,23 @@ set -euo pipefail
 
 WORKSPACE="${GITHUB_WORKSPACE:-$(cd "$(dirname "$0")" && pwd)}"
 OPENWRT="${OPENWRT_DIR:-$WORKSPACE/openwrt}"
+
+# 0. 拷贝内嵌的第三方包源码到构建树 package/
+# 说明：luci-app-cloud-ddns 等包以源码形式内嵌在仓库 $WORKSPACE/package/ 下，
+# 但 openwrt 构建树在 $OPENWRT/package/（/workdir/openwrt/package/），build job
+# 不会整体 copy $GITHUB_WORKSPACE/package/，必须在此显式拷贝，make defconfig
+# 才能扫描到这些包。
+for embedded_pkg in luci-app-cloud-ddns; do
+	src="$WORKSPACE/package/$embedded_pkg"
+	if [ -d "$src" ]; then
+		rm -rf "$OPENWRT/package/$embedded_pkg"
+		cp -a "$src" "$OPENWRT/package/$embedded_pkg"
+		echo "[ok] embedded $embedded_pkg copied to $OPENWRT/package/"
+	else
+		echo "WARNING: embedded $embedded_pkg not found at $src" >&2
+	fi
+done
+
 DEVICE_SOURCE="$WORKSPACE/devices/mt7981b-oray-x1-pro.dts"
 DEVICE_TARGET="$OPENWRT/target/linux/mediatek/dts/mt7981b-oray-x1-pro.dts"
 DEVICE_PATCH="$WORKSPACE/patches/0001-mediatek-filogic-add-oray-x1-pro.patch"
