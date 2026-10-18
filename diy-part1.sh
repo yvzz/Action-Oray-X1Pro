@@ -12,13 +12,28 @@ OPENWRT="${OPENWRT_DIR:-$WORKSPACE/openwrt}"
 # 才能扫描到这些包。
 for embedded_pkg in luci-app-cloud-ddns; do
 	src="$WORKSPACE/package/$embedded_pkg"
+	dest="$OPENWRT/package/$embedded_pkg"
 	if [ -d "$src" ]; then
-		rm -rf "$OPENWRT/package/$embedded_pkg"
-		cp -a "$src" "$OPENWRT/package/$embedded_pkg"
-		echo "[ok] embedded $embedded_pkg copied to $OPENWRT/package/"
+		rm -rf "$dest"
+		cp -a "$src" "$dest"
+		echo "[ok] embedded $embedded_pkg copied from $src"
 	else
-		echo "WARNING: embedded $embedded_pkg not found at $src" >&2
+		echo "WARNING: $src not found locally; content of \$WORKSPACE/package:" >&2
+		ls -la "$WORKSPACE/package/" 2>&1 | head -20 >&2
+		echo "[info] cloning from github.com/yvzz/luci-app-cloud-ddns"
+		rm -rf "$dest"
+		if git clone --depth=1 "https://github.com/yvzz/luci-app-cloud-ddns" "$dest"; then
+			echo "[ok] embedded $embedded_pkg cloned to $dest"
+		else
+			echo "ERROR: failed to clone $embedded_pkg" >&2
+			exit 1
+		fi
 	fi
+	if [ ! -f "$dest/Makefile" ]; then
+		echo "ERROR: $embedded_pkg Makefile missing after copy/clone" >&2
+		exit 1
+	fi
+	echo "[ok] embedded $embedded_pkg ready (Makefile present)"
 done
 
 DEVICE_SOURCE="$WORKSPACE/devices/mt7981b-oray-x1-pro.dts"
@@ -131,43 +146,9 @@ fi
 # ---- Fix sysupgrade failure on oray,x1pro ----
 # U-Boot 未在设备树 chosen 节点设置 rootdisk 属性,
 # 导致 export_fitblk_bootdev() 检测失败 → CI_METHOD 为空 → fit_do_upgrade return 1 → 固件未写入.
-# 补丁: CI_METHOD 为空时 fallback 到 UBI 默认参数 (ubi/kernel/rootfs).
-# 关键: 源码树里存在【多个】fit.sh:
-#   - 通用 OpenWrt fit.sh (不含 export_fitblk_bootdev, 补丁对其无效)
-#   - mt798x 专用 fit.sh (含 export_fitblk_bootdev + CI_METHOD, 才是本机真正的升级逻辑)
-# 必须定位到【含 export_fitblk_bootdev】的那个并打补丁, 否则会命中通用版而静默跳过.
-FIT_SH=""
-for cand in \
-  "$OPENWRT/target/linux/mediatek/base-files/lib/upgrade/fit.sh" \
-  "$OPENWRT/target/linux/mediatek/filogic/base-files/lib/upgrade/fit.sh" \
-  "$OPENWRT/target/linux/mediatek/mt798x/base-files/lib/upgrade/fit.sh" \
-  "$OPENWRT/package/base-files/files/lib/upgrade/fit.sh" \
-  "$OPENWRT/feeds/base-files/files/lib/upgrade/fit.sh" ; do
-	if [ -f "$cand" ] && grep -q "export_fitblk_bootdev" "$cand"; then
-		FIT_SH="$cand"; break
-	fi
-done
-# 兜底: 全盘搜索含 export_fitblk_bootdev 的 fit.sh (排除 build_dir / staging_dir 产物)
-if [ -z "$FIT_SH" ]; then
-	FIT_SH=$(find "$OPENWRT" -name fit.sh \
-		-not -path "*/build_dir/*" -not -path "*/staging_dir/*" 2>/dev/null \
-		-exec grep -l "export_fitblk_bootdev" {} \; | head -1)
-fi
-
-if [ -n "$FIT_SH" ]; then
-	if grep -q 'CI_ROOTPART="rootfs"' "$FIT_SH"; then
-		echo "[ok] fit.sh: already patched ($FIT_SH)"
-	else
-		sed -i 's/\[ -n "\$CI_METHOD" \] || return 1/[ -n "$CI_METHOD" ] || { CI_METHOD="ubi"; CI_UBIPART="ubi"; CI_KERNPART="kernel"; CI_ROOTPART="rootfs"; }/' "$FIT_SH"
-		if grep -q 'CI_ROOTPART="rootfs"' "$FIT_SH"; then
-			echo "[ok] fit.sh: patched ($FIT_SH)"
-		else
-			echo "WARNING: fit.sh patch failed (pattern not found in $FIT_SH)" >&2
-		fi
-	fi
-else
-	echo "WARNING: fit.sh not found (含 export_fitblk_bootdev), skipping sysupgrade fix" >&2
-fi
+# 修复方式: 通过仓库 files/ overlay 覆盖 /lib/upgrade/fit.sh (见 files/lib/upgrade/fit.sh),
+# 该文件已在 CI_METHOD 为空时 fallback 到 UBI 默认参数, 不依赖源码树路径探测, 更可靠.
+# (早期在 diy-part1.sh 里 sed 补丁源码树 fit.sh 的方式因路径探测不稳定已弃用)
 
 # ---- Rust host-compile fix (merged from diy-part2.sh — that script is NOT called by the workflow) ----
 # rustc 1.94.0's bootstrap fetches a prebuilt CI LLVM tarball; the URL 404s because

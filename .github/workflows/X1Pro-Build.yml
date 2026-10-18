@@ -316,9 +316,10 @@ jobs:
             if grep -q "CONFIG_PACKAGE_${pkg}=y" .config; then
               echo "  [OK] ${pkg}=y"
             else
-              echo "  [WARN] ${pkg} not found in .config!"
+              echo "  [ERROR] ${pkg} not found in .config!" >&2
               grep "${pkg}" .config || true
               ls -la package/${pkg}/Makefile 2>/dev/null || echo "  [ERROR] package/${pkg}/Makefile not found!"
+              exit 1
             fi
           done
 
