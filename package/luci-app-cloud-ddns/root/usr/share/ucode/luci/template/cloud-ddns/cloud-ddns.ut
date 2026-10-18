@@ -1,14 +1,4 @@
-{#
- luci-app-cloud-ddns — Cloud DDNS 设置页面（ucode 模板）
-
- 这是 ucode 模板（.ut），语法为：
-   {% ... %}   ucode 代码块
-   {{ ... }}   输出表达式
-   {# ... #}   注释（不输出）
-
- 注意：不要使用旧版 Lua 模板的 <% %> / <%= %> / <%: %> 写法，
- ucode 引擎不识别它们，会原样输出到页面上。
--#}
+{# luci-app-cloud-ddns — Cloud DDNS 设置页（ucode 模板，勿改用 Lua 的 <% %> 语法） #}
 
 {%
 	import { cursor } from 'uci';

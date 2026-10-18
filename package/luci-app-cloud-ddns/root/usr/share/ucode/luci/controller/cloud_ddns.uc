@@ -5,12 +5,21 @@
 // "No module named ... could be found"（见 ucode lib.c uc_require_path）。
 // 所以 menu.d 里的 module 只能写 luci.controller.cloud_ddns。
 //
-// 另外：dispatcher 通过 call(mod[fn], mod, runtime.env, ...) 调用本模块的
-// 函数，http 对象是第 1 个参数 env.http —— 它不是全局变量，直接用 http 会
-// 报未定义。
+// 关于 http：dispatcher 在收到请求时会把请求对象写进**全局变量**
+// （dispatcher.uc: `http = _http;`），官方 controller（admin/uci.uc、
+// pushbot.uc）都是直接用全局 http。
+// 但 dispatcher 调用 action 时也会把 runtime.env 作为第 1 个参数传入，
+// 某些版本里它是 null —— 所以这里统一走 req()：优先 env.http，取不到再退回全局。
+// （实测 24.10 上直接写 env.http 会在第 1 行就抛
+//  "left-hand side expression is null"，客户端看到的就是 500。）
 
 import { popen, readfile } from 'fs';
 import { cursor } from 'uci';
+
+/* 取当前 HTTP 请求对象：优先 env 传入，退回 dispatcher 注入的全局 http */
+function req(env) {
+	return env?.http ?? http;
+}
 
 /*
  * 后台重启服务。
@@ -24,7 +33,7 @@ function restart_service() {
 
 return {
 	act_status: function(env) {
-		let http = env.http;
+		let http = req(env);
 		let f = popen("pgrep -f 'cloud-ddns.sh' | grep -v grep", "r");
 		let out = "";
 
@@ -35,7 +44,7 @@ return {
 	},
 
 	act_log: function(env) {
-		let http = env.http;
+		let http = req(env);
 		let log = "";
 
 		try { log = readfile("/var/log/cloud-ddns.log") ?? ""; } catch(e) {}
@@ -45,8 +54,7 @@ return {
 	},
 
 	act_restart: function(env) {
-		let http = env.http;
-
+		let http = req(env);
 		restart_service();
 
 		http.prepare_content("application/json");
@@ -54,9 +62,8 @@ return {
 	},
 
 	act_save: function(env) {
-		let http = env.http;
-
-		// 注意：ucode 的 http 对象没有 formvalues()，formvalue() 不带参数时返回全部参数
+		let http = req(env);
+		// ucode 的 http 对象没有 formvalues()；formvalue() 不带参数时返回全部参数
 		let form = http.formvalue();
 		let uci = cursor();
 
