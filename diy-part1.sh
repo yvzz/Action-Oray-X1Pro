@@ -101,10 +101,59 @@ if [ -f "$BANDIX_MK" ]; then
   fi
 fi
 
-# 2. sysupgrade 说明 (oray,x1pro)
-#    platform.sh 已为 oray,x1pro 显式设置 CI_UBIPART=ubi / CI_KERNPART=kernel /
-#    CI_ROOTPART=rootfs 并直接调用 nand_do_upgrade，不经过 fit_do_upgrade，
-#    故不需要 /lib/upgrade/fit.sh（该 files/ overlay 已于 2026-10-18 移除）。
+# 2. sysupgrade 修复 (oray,x1pro) —— 必须本地 patch，不能依赖上游
+#    背景（2026-10-19 实测）：设备 platform.sh 把 oray,x1pro 放在 fit_do_upgrade
+#    分支里，而 fit_do_upgrade 依赖 export_fitblk_bootdev 读设备树
+#    chosen/rootdisk 来判定 CI_METHOD；本设备 DTS 的 chosen 节点没有 rootdisk，
+#    于是 CI_METHOD 为空 → `fit_do_upgrade` 直接 return 1 → sysupgrade 在
+#    platform_do_upgrade 阶段失败。
+#    注意 sysupgrade --test 只做镜像校验、不执行 platform_do_upgrade，所以
+#    --test 返回 0 完全测不出这个问题（现象：能上传、能校验、但刷不进去）。
+#    上游 fork(yvzz/immortalwrt-mt798x-6.6) 至今仍把 oray,x1pro 留在 fit 分支
+#    列表中（2026-10-18 编译的 #254 镜像内 platform.sh 已验证只有 `oray,x1pro|`
+#    一行，没有 nand_do_upgrade 分支），故此处在 platform_do_upgrade 的 case
+#    开头插入显式分支，使其优先命中，后面的 fit 分支自然不再生效。
+PLATFORM_SH="$(find "$OPENWRT/target/linux" -name platform.sh -path '*upgrade*' 2>/dev/null | head -1 || true)"
+if [ -n "$PLATFORM_SH" ] && [ -f "$PLATFORM_SH" ]; then
+  if grep -q 'CI_ROOTPART="rootfs"' "$PLATFORM_SH"; then
+    echo "  → platform.sh: oray,x1pro nand_do_upgrade 分支已存在，跳过"
+  else
+    python3 - "$PLATFORM_SH" <<'PYEOF'
+import sys
+
+path = sys.argv[1]
+lines = open(path, encoding='utf-8').read().split('\n')
+
+fn = next((n for n, l in enumerate(lines) if l.startswith('platform_do_upgrade()')), None)
+if fn is None:
+    print('  !! platform_do_upgrade() not found in %s' % path)
+    sys.exit(1)
+
+idx = None
+for n in range(fn, len(lines)):
+    if lines[n].strip() == 'case "$board" in':
+        idx = n
+        break
+if idx is None:
+    print('  !! case "$board" in not found after platform_do_upgrade()')
+    sys.exit(1)
+
+block = [
+    '\toray,x1pro)',
+    '\t\tCI_UBIPART="ubi"',
+    '\t\tCI_KERNPART="kernel"',
+    '\t\tCI_ROOTPART="rootfs"',
+    '\t\tnand_do_upgrade "$1"',
+    '\t\t;;',
+]
+lines[idx + 1:idx + 1] = block
+open(path, 'w', encoding='utf-8').write('\n'.join(lines))
+print('  → platform.sh: 插入 oray,x1pro nand_do_upgrade 分支 (行 %d)' % (idx + 2))
+PYEOF
+  fi
+else
+  echo "  [WARN] platform.sh not found under \$OPENWRT/target/linux" >&2
+fi
 
 # DTS/filogic.mk/02_network/platform.sh/MAC fix 已全部集成至上游源码
 # 仓库路径: yvzz/immortalwrt-mt798x-6.6 openwrt-24.10-6.6 branch

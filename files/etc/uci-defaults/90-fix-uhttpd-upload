@@ -1,5 +1,11 @@
 #!/bin/sh
-# uci-defaults: 修复 uhttpd 上传大小限制 (支持固件升级)
+# uci-defaults: 修复 uhttpd 上传限制 (支持固件升级)
+# max_upload 解除上传体积限制 (200MB)
+# script_timeout 是 CGI 进程最长运行时间，默认 60s：
+#   36MB 固件经無線/慢速链路上传很容易超时被 uhttpd 杀掉，导致升级失败
+# network_timeout 放宽到 120s，避免大包传输过程中的读超时
 uci set uhttpd.main.max_upload='200000000'
+uci set uhttpd.main.script_timeout='600'
+uci set uhttpd.main.network_timeout='120'
 uci commit uhttpd
 exit 0
