@@ -169,6 +169,25 @@ else
 	echo "WARNING: rust Makefile not found at $RUST_MK; rust host-compile may fail with 404" >&2
 fi
 
+# ---- Cloud DDNS (DNSPod + AliDNS 合一, 纯 ucode 插件) ----
+# 纯 ucode 实现，兼容 OpenWrt 24.10+ 和 ImmortalWrt 25.12+。
+# 同时支持 DNSPod (腾讯云) 和 AliDNS (阿里云) DDNS。
+# clone 到 package/ 由 buildroot 自动扫描，make defconfig 之后运行使其生效。
+CLOUDDDNS_TARGET="$OPENWRT/package/luci-app-cloud-ddns"
+rm -rf "$CLOUDDDNS_TARGET"
+if git clone --depth 1 https://github.com/yvzz/luci-app-cloud-ddns "$CLOUDDDNS_TARGET"; then
+	if [ -f "$CLOUDDDNS_TARGET/Makefile" ]; then
+		echo "[ok] cloned luci-app-cloud-ddns into package/"
+	else
+		echo "ERROR: cloned luci-app-cloud-ddns but Makefile not found!" >&2
+		rm -rf "$CLOUDDDNS_TARGET"
+		exit 1
+	fi
+else
+	echo "ERROR: failed to clone luci-app-cloud-ddns; build will continue without it" >&2
+	# Do NOT exit 1 here — feeds install may still provide the package
+fi
+
 # ---- Build date in firmware filename (merged from diy-part2.sh) ----
 IMG_MK="$OPENWRT/include/image.mk"
 if [ -f "$IMG_MK" ] && ! grep -q 'BUILD_DATE := $(shell date' "$IMG_MK"; then
