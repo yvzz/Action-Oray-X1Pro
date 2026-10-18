@@ -15,28 +15,28 @@
 	"admin/services/cloud-ddns/status": {
 		"action": {
 			"type": "function",
-			"module": "luci.controller.cloud-ddns",
+			"module": "luci.controller.cloud_ddns",
 			"function": "act_status"
 		}
 	},
 	"admin/services/cloud-ddns/log": {
 		"action": {
 			"type": "function",
-			"module": "luci.controller.cloud-ddns",
+			"module": "luci.controller.cloud_ddns",
 			"function": "act_log"
 		}
 	},
 	"admin/services/cloud-ddns/restart": {
 		"action": {
 			"type": "function",
-			"module": "luci.controller.cloud-ddns",
+			"module": "luci.controller.cloud_ddns",
 			"function": "act_restart"
 		}
 	},
 	"admin/services/cloud-ddns/save": {
 		"action": {
 			"type": "function",
-			"module": "luci.controller.cloud-ddns",
+			"module": "luci.controller.cloud_ddns",
 			"function": "act_save"
 		}
 	}

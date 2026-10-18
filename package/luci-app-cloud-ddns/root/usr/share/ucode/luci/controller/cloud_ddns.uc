@@ -1,4 +1,14 @@
 // luci-app-cloud-ddns controller (ucode)
+//
+// 文件名必须是 cloud_ddns.uc（不能带连字符）：ucode 的 require() 在解析
+// 点分模块名时只接受 [A-Za-z0-9_]，遇到 '-' 会直接放弃匹配并抛
+// "No module named ... could be found"（见 ucode lib.c uc_require_path）。
+// 所以 menu.d 里的 module 只能写 luci.controller.cloud_ddns。
+//
+// 另外：dispatcher 通过 call(mod[fn], mod, runtime.env, ...) 调用本模块的
+// 函数，http 对象是第 1 个参数 env.http —— 它不是全局变量，直接用 http 会
+// 报未定义。
+
 import { popen, readfile } from 'fs';
 import { cursor } from 'uci';
 
@@ -13,28 +23,39 @@ function restart_service() {
 }
 
 return {
-	act_status: function() {
+	act_status: function(env) {
+		let http = env.http;
 		let f = popen("pgrep -f 'cloud-ddns.sh' | grep -v grep", "r");
 		let out = "";
+
 		if (f) { out = f.read("all"); f.close(); }
+
 		http.prepare_content("application/json");
 		http.write_json({ running: length(trim(out)) > 0 });
 	},
 
-	act_log: function() {
+	act_log: function(env) {
+		let http = env.http;
 		let log = "";
+
 		try { log = readfile("/var/log/cloud-ddns.log") ?? ""; } catch(e) {}
+
 		http.prepare_content("text/plain; charset=utf-8");
 		http.write(log);
 	},
 
-	act_restart: function() {
+	act_restart: function(env) {
+		let http = env.http;
+
 		restart_service();
+
 		http.prepare_content("application/json");
 		http.write_json({ ok: true });
 	},
 
-	act_save: function() {
+	act_save: function(env) {
+		let http = env.http;
+
 		// 注意：ucode 的 http 对象没有 formvalues()，formvalue() 不带参数时返回全部参数
 		let form = http.formvalue();
 		let uci = cursor();
