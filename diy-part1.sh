@@ -31,14 +31,6 @@ for repo in luci-theme-aurora luci-app-aurora-config luci-app-bandix openwrt-ban
 done
 echo "  → aurora + pushbot packages cloned"
 
-# 1a. Clone luci-app-cloud-ddns (DNSPod + AliDNS 合一, 纯 ucode)
-if [ -d "$OPENWRT/package/luci-app-cloud-ddns" ]; then
-  echo "  → luci-app-cloud-ddns already exists, skipping clone"
-else
-  git clone --depth 1 https://github.com/yvzz/luci-app-cloud-ddns "$OPENWRT/package/luci-app-cloud-ddns"
-  echo "  → luci-app-cloud-ddns cloned"
-fi
-
 # 1b2. NPC 升级到 0.34（djylb/nps-openwrt）
 #   上游 immortalwrt/packages 的 net/nps 是 Go 源码编译、版本停在 0.26.24，
 #   且同一个包同时产出 npc + nps 两个包。改用 djylb 的 npc 包（0.34.7，下载官方
