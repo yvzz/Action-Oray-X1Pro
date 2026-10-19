@@ -110,17 +110,33 @@ fi
 #    注意 sysupgrade --test 只做镜像校验、不执行 platform_do_upgrade，所以
 #    --test 返回 0 完全测不出这个问题（现象：能上传、能校验、但刷不进去）。
 #    上游 fork(yvzz/immortalwrt-mt798x-6.6) 至今仍把 oray,x1pro 留在 fit 分支
-#    列表中（2026-10-18 编译的 #254 镜像内 platform.sh 已验证只有 `oray,x1pro|`
-#    一行，没有 nand_do_upgrade 分支），故此处在 platform_do_upgrade 的 case
-#    开头插入显式分支，使其优先命中，后面的 fit 分支自然不再生效。
-PLATFORM_SH="$(find "$OPENWRT/target/linux" -name platform.sh -path '*upgrade*' 2>/dev/null | head -1 || true)"
+#    列表中（2026-10-19 编译的 2410-none 镜像内已验证：只有 `oray,x1pro|` 一行，
+#    没有 nand_do_upgrade 分支），故此处在 platform_do_upgrade 的 case 开头插入
+#    显式分支，使其优先命中，后面的 fit 分支自然不再生效。
+#
+#    【2026-10-19 修订：上一版补丁其实一次都没打上过，两个缺陷叠加】
+#      (a) 幂等判断写成 `grep -q 'CI_ROOTPART="rootfs"'`，但这个字符串在
+#          platform.sh 里本来就大量存在（netcore,n60-pro 等一堆设备都在用），
+#          grep 恒真 → 每次都走进「已存在，跳过」，补丁从未执行。
+#      (b) 定位文件写成 `find target/linux -name platform.sh | head -1`：
+#          target/linux/mediatek/ 下不止 filogic 有 platform.sh（mt762x 也有一份），
+#          find 遍历顺序不确定，很可能把补丁打到不会编进本固件的那份上。
+#    现改为：精确路径 + 本补丁专属标记 X1PRO_NAND_UPGRADE_FIX + 打完强制校验。
+#    宁可让 CI 当场失败，也不要再白跑 90 分钟产出一个刷不进去的固件。
+PLATFORM_SH="$OPENWRT/target/linux/mediatek/filogic/base-files/lib/upgrade/platform.sh"
+if [ ! -f "$PLATFORM_SH" ]; then
+  # 精确路径不存在时才退回搜索，且必须限定 mediatek/filogic + lib/upgrade
+  PLATFORM_SH="$(find "$OPENWRT/target/linux" -path '*mediatek/filogic*' \
+                   -path '*lib/upgrade*' -name platform.sh 2>/dev/null | head -1 || true)"
+fi
 if [ -n "$PLATFORM_SH" ] && [ -f "$PLATFORM_SH" ]; then
-  if grep -q 'CI_ROOTPART="rootfs"' "$PLATFORM_SH"; then
+  if grep -q 'X1PRO_NAND_UPGRADE_FIX' "$PLATFORM_SH"; then
     echo "  → platform.sh: oray,x1pro nand_do_upgrade 分支已存在，跳过"
   else
     python3 - "$PLATFORM_SH" <<'PYEOF'
 import sys
 
+MARK = 'X1PRO_NAND_UPGRADE_FIX'
 path = sys.argv[1]
 lines = open(path, encoding='utf-8').read().split('\n')
 
@@ -139,6 +155,7 @@ if idx is None:
     sys.exit(1)
 
 block = [
+    '\t# %s: 设备树无 chosen/rootdisk，fit_do_upgrade 会 return 1，必须直落 nand' % MARK,
     '\toray,x1pro)',
     '\t\tCI_UBIPART="ubi"',
     '\t\tCI_KERNPART="kernel"',
@@ -150,9 +167,16 @@ lines[idx + 1:idx + 1] = block
 open(path, 'w', encoding='utf-8').write('\n'.join(lines))
 print('  → platform.sh: 插入 oray,x1pro nand_do_upgrade 分支 (行 %d)' % (idx + 2))
 PYEOF
+    # 强制校验：补丁没生效就立刻让 CI 失败
+    if ! grep -q 'X1PRO_NAND_UPGRADE_FIX' "$PLATFORM_SH"; then
+      echo "  [ERROR] platform.sh 补丁未生效: $PLATFORM_SH" >&2
+      exit 1
+    fi
+    echo "  → platform.sh: 补丁已写入并通过校验"
   fi
 else
-  echo "  [WARN] platform.sh not found under \$OPENWRT/target/linux" >&2
+  echo "  [ERROR] filogic platform.sh not found under \$OPENWRT/target/linux" >&2
+  exit 1
 fi
 
 # DTS/filogic.mk/02_network/platform.sh/MAC fix 已全部集成至上游源码
