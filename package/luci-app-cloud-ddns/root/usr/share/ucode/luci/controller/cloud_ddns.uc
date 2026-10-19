@@ -49,6 +49,13 @@ return {
 
 		try { log = readfile("/var/log/cloud-ddns.log") ?? ""; } catch(e) {}
 
+		// 兜底：日志文件为空时（例如服务刚安装还没写、或日志被清理），
+		// 退而读 syslog 里 cloud-ddns 的输出，避免页面永远一片空白。
+		if (length(trim(log)) == 0) {
+			let f = popen("logread -e cloud-ddns 2>/dev/null | tail -n 200", "r");
+			if (f) { log = f.read("all") ?? ""; f.close(); }
+		}
+
 		http.prepare_content("text/plain; charset=utf-8");
 		http.write(log);
 	},
