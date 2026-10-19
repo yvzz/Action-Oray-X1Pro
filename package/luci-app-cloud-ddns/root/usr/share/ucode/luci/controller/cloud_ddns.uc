@@ -14,6 +14,7 @@
 //  "left-hand side expression is null"，客户端看到的就是 500。）
 
 import { popen, readfile } from 'fs';
+import { connect } from 'ubus';
 import { cursor } from 'uci';
 
 /* 取当前 HTTP 请求对象：优先 env 传入，退回 dispatcher 注入的全局 http */
@@ -34,13 +35,32 @@ function restart_service() {
 return {
 	act_status: function(env) {
 		let http = req(env);
-		let f = popen("pgrep -f 'cloud-ddns.sh' | grep -v grep", "r");
-		let out = "";
+		let running = false;
 
-		if (f) { out = f.read("all"); f.close(); }
+		/*
+		 * 用 ubus 查 procd 里真实的服务实例。
+		 * 不能再用 pgrep -f 'cloud-ddns.sh'：popen() 起的 shell 命令行里就含这个
+		 * 字符串，pgrep 会把执行它的 shell 自己也匹配上，于是永远返回「运行中」——
+		 * 刷完机什么都不配也显示运行就是这个原因。
+		 */
+		try {
+			let ubus = connect();
+			let svc = ubus.call('service', 'list', { name: 'cloud-ddns' });
+			let inst = svc?.['cloud-ddns']?.instances;
+
+			running = (type(inst) == 'object' && length(keys(inst)) > 0);
+		} catch (e) {}
+
+		// 没在跑时给出具体原因（页面「服务状态」处展示），省得对着「未运行」猜
+		let reason = "";
+
+		if (!running) {
+			let f = popen('/usr/share/cloud-ddns/check-config.sh', 'r');
+			if (f) { reason = trim(f.read("all") ?? ""); f.close(); }
+		}
 
 		http.prepare_content("application/json");
-		http.write_json({ running: length(trim(out)) > 0 });
+		http.write_json({ running: running, reason: reason });
 	},
 
 	act_log: function(env) {
