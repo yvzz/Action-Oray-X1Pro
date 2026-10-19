@@ -332,8 +332,6 @@ jobs:
             exit 1
           fi
 
-          make download -j"$NPROC"
-
           # 编译日志落盘：Actions 日志下载需要仓库 admin 权限（匿名 API 403），
           # 编译失败时把完整日志存进 artifact + 关键错误写进 step summary，
           # 这样后续定位不再依赖日志下载权限。
@@ -342,6 +340,19 @@ jobs:
 
           echo "=== 编译前磁盘 ==="
           df -h / /workdir 2>/dev/null || df -h || true
+
+          # 下载源码包。注意：OpenWrt 的 download 目标即使有个别包失败也可能返回 0
+          # （只打印 "ERROR: package/xxx failed to build"），不主动检查就会继续编译
+          # 80 分钟后才在最后一步失败（#265 的 npc 就是这样白白跑了 84 分钟）。
+          if ! make download -j"$NPROC" 2>&1 | tee "$BUILD_LOG_DIR/download.log"; then
+            echo "ERROR: make download failed" >&2
+            exit 1
+          fi
+          if grep -qaE "ERROR: package/.* failed to build|Download failed|does not match" "$BUILD_LOG_DIR/download.log"; then
+            echo "ERROR: 有包源码下载失败（make download 返回 0 但打印了 ERROR），提前中止以节省编译时间" >&2
+            grep -aE "ERROR: package/.* failed to build|Download failed|does not match" "$BUILD_LOG_DIR/download.log" >&2
+            exit 1
+          fi
 
           if [ "${{ inputs.verbose }}" = "true" ]; then
             make -j1 V=s CC="ccache gcc" CXX="ccache g++" 2>&1 | tee "$BUILD_LOG_DIR/build-verbose.log"

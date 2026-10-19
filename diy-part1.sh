@@ -167,6 +167,26 @@ else
 	echo "WARNING: rust Makefile not found at $RUST_MK; rust host-compile may fail with 404" >&2
 fi
 
+# ---- Fix: dl/ 缓存被上游改版污染后无法自愈（npc 0.34.7 -> 0.34.9 触发过一次）----
+# download.pl 遇到「本地已有同名文件、但 hash 与 Makefile 要求不一致」时，正确行为是
+# 删除旧文件后重新下载。immortalwrt v25.12.1 这份脚本把 die 写在了 unlink 之前：
+#     die "Hash of the local file ... does not match - deleting download.\n";
+#     unlink "$target/$filename";        ← 位于 die 之后，永远不会执行
+# 于是坏文件永远留在 dl/（由 Actions cache 恢复而来），每次 make 都在同一处 Error 2
+# 且无法自愈（OpenWrt 官方是 unlink 在 die 之前，重跑一次即可恢复）。
+# 这里把 die 降级为 print STDERR：本次就删除旧文件并重新下载，无需重跑整轮编译。
+DL_PL="$OPENWRT/scripts/download.pl"
+if [ -f "$DL_PL" ]; then
+	if grep -q 'die "Hash of the local file' "$DL_PL"; then
+		perl -0pi -e 's/\bdie "Hash of the local file/print STDERR "Hash of the local file/' "$DL_PL"
+		echo "[ok] download.pl: hash 不匹配时改为删除旧文件并重新下载（原 die 会跳过 unlink）"
+	else
+		echo "[info] download.pl 无需修补（已是删除后重试，或上游已修复）"
+	fi
+else
+	echo "WARNING: scripts/download.pl not found at $DL_PL" >&2
+fi
+
 # ---- Build date in firmware filename (merged from diy-part2.sh) ----
 IMG_MK="$OPENWRT/include/image.mk"
 if [ -f "$IMG_MK" ] && ! grep -q 'BUILD_DATE := $(shell date' "$IMG_MK"; then
