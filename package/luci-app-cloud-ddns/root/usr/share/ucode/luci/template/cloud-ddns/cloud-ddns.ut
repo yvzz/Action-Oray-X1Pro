@@ -49,6 +49,22 @@
 
 {% include('header') %}
 
+<style type="text/css">
+	/* 自绘弹窗的转圈图标（主题自带 .spinning 时不冲突，这里是兜底） */
+	.cd-spinner {
+		display: inline-block;
+		width: 14px;
+		height: 14px;
+		margin-right: .6em;
+		vertical-align: -2px;
+		border: 2px solid currentColor;
+		border-top-color: transparent;
+		border-radius: 50%;
+		animation: cd-spin .8s linear infinite;
+	}
+	@keyframes cd-spin { to { transform: rotate(360deg); } }
+</style>
+
 <h2 name="content">{{ _('Cloud DDNS') }}</h2>
 
 <script type="text/javascript">//<![CDATA[
@@ -79,15 +95,17 @@
 
 	var CD_logTimer = null;
 
-	/* ── 与系统「保存并应用」同一套弹窗 ──
-	   LuCI 自身的 Apply 流程就是 UI.changes.displayStatus('notice spinning', …)，
-	   这里直接复用同一个函数，外观与行为完全一致。 */
-	function CD_ui() {
+	/* ── 弹窗 ──
+	   首选复用系统「保存并应用」的 UI.changes.displayStatus（ui.js 已加载时，
+	   外观与系统完全一致）。但自定义页面不加载 LuCI 的 ui.js——
+	   LuCI.ui / LuCI.showModal 在这里根本不存在（24.10/25.12 实测均如此），
+	   所以主路径是自绘：复用主题现成的 modal / alert-message 样式类，
+       即使主题样式缺失也有内联兜底，任何情况下都不会退化成浏览器 alert。 */
+	function CD_sysUI() {
 		try {
-			if (typeof LuCI === 'undefined') return null;
-			if (LuCI.ui && LuCI.ui.changes && typeof LuCI.ui.changes.displayStatus === 'function') return LuCI.ui.changes;
-			if (LuCI.ui && typeof LuCI.ui.showModal === 'function') return LuCI.ui;
-			if (typeof LuCI.showModal === 'function') return LuCI;
+			if (typeof LuCI !== 'undefined' && LuCI.ui && LuCI.ui.changes &&
+			    typeof LuCI.ui.changes.displayStatus === 'function')
+				return LuCI.ui.changes;
 		} catch (e) {}
 		return null;
 	}
@@ -99,11 +117,20 @@
 	}
 
 	function CD_modalAlert(cls, title, msg, withClose) {
-		var ui = CD_ui();
+		var spinning = cls ? cls.split(/\s+/).indexOf('spinning') >= 0 : false;
 		var kids = [];
 
 		if (title) kids.push(CD_node('h4', title));
-		kids.push(CD_node('p', msg));
+		if (spinning) {
+			var p = CD_node('p', null);
+			var sp = CD_node('span', null);
+			sp.className = 'cd-spinner';
+			sp.appendChild(document.createTextNode(msg));
+			p.appendChild(sp);
+			kids.push(p);
+		} else {
+			kids.push(CD_node('p', msg));
+		}
 
 		if (withClose) {
 			var row = document.createElement('div');
@@ -119,19 +146,32 @@
 			kids.push(row);
 		}
 
-		if (!ui) { alert(title + ': ' + msg); return false; }
+		/* 首选：系统「保存并应用」同一个函数（ui.js 已加载时外观完全一致） */
+		var sys = CD_sysUI();
+		if (sys) {
+			try { sys.displayStatus(cls, kids); return true; } catch (e) {}
+		}
 
-		/* LuCI 自己的 Apply 弹窗就是 changes.displayStatus()，优先走同一条路，
-		   外观与「保存并应用」完全一致；失败再逐级退回。 */
+		/* 主路径：自绘遮罩 + 卡片，class 沿用主题的 modal / alert-message */
 		try {
-			if (ui.displayStatus) { ui.displayStatus(cls, kids); return true; }
-		} catch (e) {}
-
-		try {
-			var dlg = ui.showModal('', '');
-			dlg.classList.add('alert-message');
-			if (cls) cls.split(/\s+/).forEach(function(c) { if (c) dlg.classList.add(c); });
-			kids.forEach(function(k) { dlg.appendChild(k); });
+			var ov = document.getElementById('cd_modal_overlay');
+			if (!ov) {
+				ov = document.createElement('div');
+				ov.id = 'cd_modal_overlay';
+				ov.style.cssText = 'position:fixed;left:0;top:0;right:0;bottom:0;'
+					+ 'z-index:9000;background:rgba(0,0,0,.55);'
+					+ 'display:flex;align-items:center;justify-content:center;';
+				document.body.appendChild(ov);
+			}
+			var card = document.createElement('div');
+			card.className = 'modal alert-message notice';
+			if (cls) cls.split(/\s+/).forEach(function(c) { if (c) card.classList.add(c); });
+			card.style.cssText = 'min-width:280px;max-width:440px;'
+				+ 'padding:1.25em 1.5em;border-radius:8px;'
+				+ 'box-shadow:0 6px 24px rgba(0,0,0,.35);';
+			kids.forEach(function(k) { card.appendChild(k); });
+			ov.innerHTML = '';
+			ov.appendChild(card);
 			return true;
 		} catch (e) {}
 
@@ -140,27 +180,22 @@
 	}
 
 	function CD_modalHide() {
-		var ui = CD_ui();
-		if (!ui) return;
-		try {
-			if (ui.displayStatus) ui.displayStatus(false);
-			else if (ui.hideModal) ui.hideModal();
-			return;
-		} catch (e) {}
-		try { ui.hideModal(); } catch (e) {}
+		var sys = CD_sysUI();
+		if (sys) {
+			try { sys.displayStatus(false); } catch (e) {}
+		}
+		var ov = document.getElementById('cd_modal_overlay');
+		if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
 	}
 
 	/* 等待遮罩：保存/重启期间显示，结束后自动关闭 */
 	function CD_modalWait(msg) {
-		if (!CD_modalAlert('notice spinning', '', msg, false)) return false;
-		return true;
+		return CD_modalAlert('notice spinning', '', msg, false);
 	}
 
 	function CD_modalDone(msg) {
-		var ui = CD_ui();
-		if (!ui) { if (msg) alert(msg); return; }
 		CD_modalAlert('notice', '', msg, false);
-		window.setTimeout(CD_modalHide, CD_ui() && CD_ui().displayStatus ? 1200 : 1500);
+		window.setTimeout(CD_modalHide, 1200);
 	}
 
 	function CD_updateStatus() {
