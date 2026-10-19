@@ -252,13 +252,22 @@ process_domains() {
 }
 
 # ── Main loop ──
+CD_BADCFG_LOGGED=0
+
 while true; do
     load_config
 
-    if [ "$DP_ENABLED" != "1" ] && [ "$ALI_ENABLED" != "1" ]; then
+    # 运行前校验：不满足条件就空转等待，不产生任何 API 请求。
+    # 原因只在状态刚变坏时打一次，避免每 60 秒刷屏。
+    if ! /usr/share/cloud-ddns/check-config.sh >/dev/null 2>&1; then
+        if [ "$CD_BADCFG_LOGGED" != "1" ]; then
+            log "$(date '+%F %T') 配置不满足运行条件（需：启用服务商 + 凭据齐全 + 至少一条 A/AAAA 域名记录），每 60 秒复查一次"
+            CD_BADCFG_LOGGED=1
+        fi
         sleep 60
         continue
     fi
+    CD_BADCFG_LOGGED=0
 
     clean_log
     log "$(date '+%F %T') === Cloud DDNS 检查开始 ==="

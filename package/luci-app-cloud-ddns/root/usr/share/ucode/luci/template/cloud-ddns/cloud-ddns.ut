@@ -62,9 +62,16 @@
 
 		XHR.get('{{ url_status }}', null, function(x, d) {
 			if (!el) return;
-			el.innerHTML = (d && d.running)
-				? '<span style="color:#090;font-weight:bold">● ' + CD_TXT.running + '</span>'
-				: '<span style="color:#c00;font-weight:bold">● ' + CD_TXT.stopped + '</span>';
+
+			if (d && d.running) {
+				el.innerHTML = '<span style="color:#090;font-weight:bold">● ' + CD_TXT.running + '</span>';
+			}
+			else {
+				/* 未运行时把「为什么不跑」直接显示出来，省得对着状态猜 */
+				var why = (d && d.reason) ? '(' + String(d.reason).replace(/[<>&]/g, '') + ')' : '';
+				el.innerHTML = '<span style="color:#c00;font-weight:bold">● ' + CD_TXT.stopped + '</span>' +
+					'<span style="color:#888;font-weight:normal;margin-left:.5em">' + why + '</span>';
+			}
 		}, 15000).catch(function() {
 			if (el) el.innerHTML = '<span style="color:#c00">' + CD_TXT.loadFail + '</span>';
 		});
