@@ -132,3 +132,21 @@ msgstr "自动刷新（10 秒）"
 
 msgid "最后刷新"
 msgstr "最后刷新"
+
+msgid "正在保存配置…"
+msgstr "正在保存配置…"
+
+msgid "正在重启服务…"
+msgstr "正在重启服务…"
+
+msgid "配置已应用"
+msgstr "配置已应用"
+
+msgid "服务已重启"
+msgstr "服务已重启"
+
+msgid "应用失败"
+msgstr "应用失败"
+
+msgid "关闭"
+msgstr "关闭"
