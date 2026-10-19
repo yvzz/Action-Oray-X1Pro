@@ -140,31 +140,42 @@ dp_api_post() {
 
 dp_update_domain() {
     local main=$1 sub=$2 rtype=$3
-    local my_ip domain_id record_id record_rs record_code post_type
+    local my_ip domain_id list_rs record_id record_rs record_code action
+
+    # 主机记录为空时按根域名处理（DNSPod 用 @ 表示）
+    [ -z "$sub" ] && sub="@"
 
     my_ip=$(get_current_ip "$rtype" "$(if [ "$rtype" = "AAAA" ]; then echo "$IPV6_SRC"; else echo "$IPV4_SRC"; fi)")
     [ -z "$my_ip" ] && { log "$(date '+%F %T') [DNSPod] 无法获取IP，跳过 ${sub}.${main}"; return; }
 
-    domain_id=$(dp_api_post "Domain.Info" "domain=${main}")
-    domain_id=$(echo "$domain_id" | sed 's/.*"id":"\([0-9]*\)".*/\1/')
+    domain_id=$(dp_api_post "Domain.Info" "domain=${main}" | tr -d ' \n' | sed 's/.*"id":"\([0-9]*\)".*/\1/')
+    case "$domain_id" in ''|*[!0-9]*) domain_id="";; esac
     [ -z "$domain_id" ] && { log "$(date '+%F %T') [DNSPod] 获取域名ID失败: ${main}"; return; }
 
-    if echo "$my_ip" | grep -qE '^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$'; then
-        post_type="Record.Ddns"
+    # 先查这条主机记录是否已存在：没有就新增，有则修改。
+    # 不能用 Record.Ddns——它是「快速修改」，必须传 record_id，记录不存在会返回
+    # code 8「记录编号错误」，而且不支持 AAAA 记录。
+    # 不限制 record_line，任意线路上的同名记录都能命中（限定默认线路时，
+    # 建在其它线路的记录会查不到，导致重复新增报 code 104）。
+    list_rs=$(dp_api_post "Record.List" "domain_id=${domain_id}&sub_domain=${sub}&record_type=${rtype}")
+    record_id=$(echo "$list_rs" | tr -d ' \n' | sed 's/.*"records":\[{"id":"\([0-9]*\)".*/\1/')
+    # sed 没匹配到时会原样输出整行，必须校验结果是纯数字才算有效 id
+    case "$record_id" in ''|*[!0-9]*) record_id="";; esac
+
+    if [ -z "$record_id" ]; then
+        action="新增记录"
+        record_rs=$(dp_api_post "Record.Create" "domain_id=${domain_id}&sub_domain=${sub}&record_type=${rtype}&value=${my_ip}&record_line=%e9%bb%98%e8%ae%a4")
     else
-        post_type="Record.Modify"
+        action="更新记录"
+        record_rs=$(dp_api_post "Record.Modify" "domain_id=${domain_id}&record_id=${record_id}&sub_domain=${sub}&record_type=${rtype}&value=${my_ip}&record_line=%e9%bb%98%e8%ae%a4")
     fi
 
-    record_id=$(dp_api_post "Record.List" "domain_id=${domain_id}&sub_domain=${sub}&record_type=${rtype}&record_line=%e9%bb%98%e8%ae%a4")
-    record_id=$(echo "$record_id" | sed 's/.*"id":"\([0-9]*\)".*/\1/')
-
-    record_rs=$(dp_api_post "$post_type" "domain_id=${domain_id}&record_id=${record_id}&sub_domain=${sub}&record_type=${rtype}&value=${my_ip}&record_line=%e9%bb%98%e8%ae%a4")
-    record_code=$(echo "$record_rs" | sed 's/.*{"code":"\([0-9]*\)".*/\1/')
+    record_code=$(echo "$record_rs" | tr -d ' \n' | sed 's/.*{"code":"\([0-9]*\)".*/\1/')
 
     if [ "$record_code" = "1" ]; then
-        log "$(date '+%F %T') [DNSPod] ${sub}.${main} (${rtype}) -> ${my_ip} 更新成功"
+        log "$(date '+%F %T') [DNSPod] ${sub}.${main} (${rtype}) ${action} -> ${my_ip}"
     else
-        log "$(date '+%F %T') [DNSPod] ${sub}.${main} (${rtype}) 更新失败: ${record_rs}"
+        log "$(date '+%F %T') [DNSPod] ${sub}.${main} (${rtype}) ${action}失败(value=${my_ip}): ${record_rs}"
     fi
 }
 
