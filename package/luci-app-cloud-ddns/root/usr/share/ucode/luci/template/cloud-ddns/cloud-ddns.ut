@@ -37,7 +37,13 @@
 		restartOk:  sprintf('%J', _('重启命令已下发')),
 		saving:     sprintf('%J', _('保存中…')),
 		noLog:   sprintf('%J', _('暂无日志。可能原因：服务未启用（DNSPod / AliDNS 都未勾选启用）、未产生输出，或日志已被清理。')),
-		loadFail: sprintf('%J', _('读取失败'))
+		loadFail: sprintf('%J', _('读取失败')),
+		savingTitle: sprintf('%J', _('正在保存配置…')),
+		restartTitle: sprintf('%J', _('正在重启服务…')),
+		applied:  sprintf('%J', _('配置已应用')),
+		restarted: sprintf('%J', _('服务已重启')),
+		failTitle: sprintf('%J', _('应用失败')),
+		close:    sprintf('%J', _('关闭'))
 	};
 -%}
 
@@ -47,15 +53,115 @@
 
 <script type="text/javascript">//<![CDATA[
 	var CD_TXT = {
-		running: {{ T.running }},
-		stopped: {{ T.stopped }},
-		nolog:   {{ T.nolog }},
-		del:     {{ T.del }},
-		saved:   {{ T.saved }},
-		failed:  {{ T.failed }}
+		running:     {{ T.running }},
+		stopped:     {{ T.stopped }},
+		del:         {{ T.del }},
+		saved:       {{ T.saved }},
+		failed:      {{ T.failed }},
+		restarting:  {{ T.restarting }},
+		restartOk:   {{ T.restartOk }},
+		saving:      {{ T.saving }},
+		noLog:       {{ T.noLog }},
+		loadFail:    {{ T.loadFail }},
+		savingTitle: {{ T.savingTitle }},
+		restartTitle: {{ T.restartTitle }},
+		applied:     {{ T.applied }},
+		restarted:   {{ T.restarted }},
+		failTitle:   {{ T.failTitle }},
+		close:       {{ T.close }}
 	};
 
+	/* 取值兜底：_lmo 版本与模板不同步时（热修/刷机混用）也不要显示 undefined */
+	function CD_txt(key, fallback) {
+		var v = CD_TXT[key];
+		return (typeof v === 'string' && v !== '') ? v : fallback;
+	}
+
 	var CD_logTimer = null;
+
+	/* ── 与系统「保存并应用」同一套弹窗 ──
+	   LuCI 自身的 Apply 流程就是 UI.changes.displayStatus('notice spinning', …)，
+	   这里直接复用同一个函数，外观与行为完全一致。 */
+	function CD_ui() {
+		try {
+			if (typeof LuCI === 'undefined') return null;
+			if (LuCI.ui && LuCI.ui.changes && typeof LuCI.ui.changes.displayStatus === 'function') return LuCI.ui.changes;
+			if (LuCI.ui && typeof LuCI.ui.showModal === 'function') return LuCI.ui;
+			if (typeof LuCI.showModal === 'function') return LuCI;
+		} catch (e) {}
+		return null;
+	}
+
+	function CD_node(tag, text) {
+		var n = document.createElement(tag);
+		if (text != null) n.textContent = text;
+		return n;
+	}
+
+	function CD_modalAlert(cls, title, msg, withClose) {
+		var ui = CD_ui();
+		var kids = [];
+
+		if (title) kids.push(CD_node('h4', title));
+		kids.push(CD_node('p', msg));
+
+		if (withClose) {
+			var row = document.createElement('div');
+			var btn = document.createElement('button');
+			row.className = 'button-row';
+			btn.className = 'btn cbi-button';
+			btn.appendChild(document.createTextNode(CD_txt('close', '\u5173\u95ed')));
+			btn.addEventListener('click', function(ev) {
+				ev.preventDefault();
+				CD_modalHide();
+			});
+			row.appendChild(btn);
+			kids.push(row);
+		}
+
+		if (!ui) { alert(title + ': ' + msg); return false; }
+
+		/* LuCI 自己的 Apply 弹窗就是 changes.displayStatus()，优先走同一条路，
+		   外观与「保存并应用」完全一致；失败再逐级退回。 */
+		try {
+			if (ui.displayStatus) { ui.displayStatus(cls, kids); return true; }
+		} catch (e) {}
+
+		try {
+			var dlg = ui.showModal('', '');
+			dlg.classList.add('alert-message');
+			if (cls) cls.split(/\s+/).forEach(function(c) { if (c) dlg.classList.add(c); });
+			kids.forEach(function(k) { dlg.appendChild(k); });
+			return true;
+		} catch (e) {}
+
+		alert(title + ': ' + msg);
+		return false;
+	}
+
+	function CD_modalHide() {
+		var ui = CD_ui();
+		if (!ui) return;
+		try {
+			if (ui.displayStatus) ui.displayStatus(false);
+			else if (ui.hideModal) ui.hideModal();
+			return;
+		} catch (e) {}
+		try { ui.hideModal(); } catch (e) {}
+	}
+
+	/* 等待遮罩：保存/重启期间显示，结束后自动关闭 */
+	function CD_modalWait(msg) {
+		if (!CD_modalAlert('notice spinning', '', msg, false)) return false;
+		return true;
+	}
+
+	function CD_modalDone(msg) {
+		var ui = CD_ui();
+		if (!ui) { if (msg) alert(msg); return; }
+		CD_modalAlert('notice', '', msg, false);
+		window.setTimeout(CD_modalHide, CD_ui() && CD_ui().displayStatus ? 1200 : 1500);
+	}
 
 	function CD_updateStatus() {
 		var el = document.getElementById('cd_status');
@@ -64,16 +170,16 @@
 			if (!el) return;
 
 			if (d && d.running) {
-				el.innerHTML = '<span style="color:#090;font-weight:bold">● ' + CD_TXT.running + '</span>';
+				el.innerHTML = '<span style="color:#090;font-weight:bold">\u25cf ' + CD_txt('running', '\u8fd0\u884c\u4e2d') + '</span>';
 			}
 			else {
 				/* 未运行时把「为什么不跑」直接显示出来，省得对着状态猜 */
 				var why = (d && d.reason) ? '(' + String(d.reason).replace(/[<>&]/g, '') + ')' : '';
-				el.innerHTML = '<span style="color:#c00;font-weight:bold">● ' + CD_TXT.stopped + '</span>' +
+				el.innerHTML = '<span style="color:#c00;font-weight:bold">\u25cf ' + CD_txt('stopped', '\u672a\u8fd0\u884c') + '</span>' +
 					'<span style="color:#888;font-weight:normal;margin-left:.5em">' + why + '</span>';
 			}
 		}, 15000).catch(function() {
-			if (el) el.innerHTML = '<span style="color:#c00">' + CD_TXT.loadFail + '</span>';
+			if (el) el.innerHTML = '<span style="color:#c00">' + CD_txt('loadFail', '\u8bfb\u53d6\u5931\u8d25') + '</span>';
 		});
 	}
 
@@ -86,54 +192,40 @@
 			var txt = (x.responseText || '').replace(/\s+$/, '');
 			var keepBottom = (ta.scrollTop + ta.clientHeight >= ta.scrollHeight - 20);
 
-			ta.value = (txt === '') ? CD_TXT.noLog : txt.split('\n').slice(-200).join('\n');
+			ta.value = (txt === '')
+				? CD_txt('noLog', '\u6682\u65e0\u65e5\u5fd7\u3002')
+				: txt.split('\n').slice(-200).join('\n');
 			ta.scrollTop = keepBottom ? ta.scrollHeight : 0;
 
 			var mt = document.getElementById('cd_logtime');
 			if (mt) mt.innerHTML = new Date().toLocaleTimeString();
 		}, 15000).catch(function() {
-			if (ta) ta.value = CD_TXT.loadFail;
+			if (ta) ta.value = CD_txt('loadFail', '\u8bfb\u53d6\u5931\u8d25');
 		});
 	}
 
 	/* 日志自动刷新开关（默认开，10s 一次） */
 	function CD_setAutoLog(on) {
 		if (CD_logTimer) { clearInterval(CD_logTimer); CD_logTimer = null; }
-		if (on) CD_logTimer = setInterval(CD_loadLog, 10000);
-	}
-
-	/* 按钮即时反馈：busy 期间禁用 + 换文案，结束后还原 */
-	function CD_busy(btn, busy, busyText, doneText) {
-		if (!btn) return;
-		if (busy) {
-			btn.oldText = btn.innerHTML;
-			btn.disabled = true;
-			btn.innerHTML = busyText;
-		}
-		else if (doneText) {
-			btn.innerHTML = doneText;
-			setTimeout(function() {
-				btn.innerHTML = btn.oldText;
-				btn.disabled = false;
-			}, 1800);
-		}
-		else {
-			btn.innerHTML = btn.oldText;
-			btn.disabled = false;
-		}
+		if (on) CD_logTimer = window.setInterval(CD_loadLog, 10000);
 	}
 
 	function CD_restart() {
-		var btn = document.getElementById('cd_btn_restart');
+		CD_modalWait(CD_txt('restartTitle', '\u6b63\u5728\u91cd\u542f\u670d\u52a1\u2026'));
 
-		CD_busy(btn, true, CD_TXT.restarting);
-
-		XHR.get('{{ url_restart }}', null, function() {
-			CD_busy(btn, false, null, CD_TXT.restartOk);
-			setTimeout(function() { CD_updateStatus(); CD_loadLog(); }, 2000);
-		}, 20000).catch(function(e) {
-			CD_busy(btn, false);
-			alert(CD_TXT.failed + ': ' + (e && e.message ? e.message : ''));
+		XHR.get('{{ url_restart }}', null, function(x, d) {
+			window.setTimeout(function() {
+				if (d && d.ok === false) {
+					CD_modalAlert('notice', CD_txt('failTitle', '\u5e94\u7528\u5931\u8d25'), (d.error || CD_txt('failed', '\u4fdd\u5b58\u5931\u8d25')), true);
+					return;
+				}
+				CD_updateStatus();
+				CD_loadLog();
+				CD_modalDone(CD_txt('restarted', '\u670d\u52a1\u5df2\u91cd\u542f'));
+			}, 2000);
+		}, 30000).catch(function(e) {
+			CD_modalAlert('notice', CD_txt('failTitle', '\u5e94\u7528\u5931\u8d25'),
+				CD_txt('failed', '\u4fdd\u5b58\u5931\u8d25') + ': ' + (e && e.message ? e.message : ''), true);
 		});
 	}
 
@@ -157,12 +249,11 @@
 				'<option value="AAAA">AAAA</option></select></td>' +
 			'<td><input type="text" class="cbi-input-text" name="domain_' + idx + '_main_domain" style="width:150px" placeholder="example.com" /></td>' +
 			'<td><input type="text" class="cbi-input-text" name="domain_' + idx + '_sub_domain" style="width:100px" placeholder="www" /></td>' +
-			'<td><button class="btn cbi-button" type="button" onclick="this.closest(\'tr\').remove()">' + CD_TXT.del + '</button></td>';
+			'<td><button class="btn cbi-button" type="button" onclick="this.closest(\'tr\').remove()">' + CD_txt('del', '\u5220\u9664') + '</button></td>';
 	}
 
 	function CD_save() {
 		var data = {};
-		var btn = document.getElementById('cd_btn_save');
 
 		new FormData(document.getElementById('cd_form')).forEach(function(v, k) {
 			data[k] = v;
@@ -171,15 +262,21 @@
 		if (data.dnspod_enabled == null) data.dnspod_enabled = '0';
 		if (data.ali_enabled == null) data.ali_enabled = '0';
 
-		CD_busy(btn, true, CD_TXT.saving);
+		CD_modalWait(CD_txt('savingTitle', '\u6b63\u5728\u4fdd\u5b58\u914d\u7f6e\u2026'));
 
 		XHR.post('{{ url_save }}', data, function(x, d) {
-			CD_busy(btn, false);
-			alert((d && d.ok) ? CD_TXT.saved : CD_TXT.failed);
-			setTimeout(function() { CD_updateStatus(); CD_loadLog(); }, 2000);
-		}, 20000).catch(function(e) {
-			CD_busy(btn, false);
-			alert(CD_TXT.failed + ': ' + (e && e.message ? e.message : ''));
+			window.setTimeout(function() {
+				if (d && d.ok === false) {
+					CD_modalAlert('notice', CD_txt('failTitle', '\u5e94\u7528\u5931\u8d25'), (d.error || CD_txt('failed', '\u4fdd\u5b58\u5931\u8d25')), true);
+					return;
+				}
+				CD_updateStatus();
+				CD_loadLog();
+				CD_modalDone(CD_txt('applied', '\u914d\u7f6e\u5df2\u5e94\u7528'));
+			}, 2000);
+		}, 30000).catch(function(e) {
+			CD_modalAlert('notice', CD_txt('failTitle', '\u5e94\u7528\u5931\u8d25'),
+				CD_txt('failed', '\u4fdd\u5b58\u5931\u8d25') + ': ' + (e && e.message ? e.message : ''), true);
 		});
 	}
 
@@ -189,7 +286,7 @@
 		CD_toggleMode();
 
 		/* 状态 30s、日志 10s 自动刷新 */
-		setInterval(CD_updateStatus, 30000);
+		window.setInterval(CD_updateStatus, 30000);
 		CD_setAutoLog(true);
 
 		document.getElementById('dnspod_mode').addEventListener('change', CD_toggleMode);
