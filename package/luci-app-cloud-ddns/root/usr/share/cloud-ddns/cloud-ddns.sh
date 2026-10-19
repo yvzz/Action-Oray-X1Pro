@@ -9,10 +9,19 @@
 LOGFILE="/var/log/cloud-ddns.log"
 LASTIP_FILE="/usr/share/cloud-ddns/last.ip"
 mkdir -p /usr/share/cloud-ddns
-touch "$LASTIP_FILE"
+[ -d /var/log ] || mkdir -p /var/log
+touch "$LOGFILE"
 
 # ── UCI helpers ──
 uci_get() { uci -q get "$1" 2>/dev/null; }
+
+# ── 日志：同时写进 LOGFILE（LuCI 页面读取）和 stdout（procd 会收进 syslog）──
+# 注意：只用于「状态/结果」输出；像 get_inet_ipv4() 这种用 echo 返回 IP 的
+# 值传递函数，绝对不能改成 log()，否则会把 IP 混进日志且返回值丢失。
+log() {
+    echo "$@"
+    echo "$@" >> "$LOGFILE" 2>/dev/null
+}
 
 load_config() {
     # DNSPod
@@ -43,7 +52,7 @@ clean_log() {
     local n; n=$(wc -l < "$LOGFILE" 2>/dev/null || echo 0)
     if [ "$n" -ge 3000 ]; then
         : > "$LOGFILE"
-        echo "$(date '+%Y-%m-%d %H:%M:%S') 日志超限清空" >> "$LOGFILE"
+        log "$(date '+%Y-%m-%d %H:%M:%S') 日志超限清空"
     fi
 }
 
@@ -134,11 +143,11 @@ dp_update_domain() {
     local my_ip domain_id record_id record_rs record_code post_type
 
     my_ip=$(get_current_ip "$rtype" "$(if [ "$rtype" = "AAAA" ]; then echo "$IPV6_SRC"; else echo "$IPV4_SRC"; fi)")
-    [ -z "$my_ip" ] && { echo "$(date '+%F %T') [DNSPod] 无法获取IP，跳过 ${sub}.${main}"; return; }
+    [ -z "$my_ip" ] && { log "$(date '+%F %T') [DNSPod] 无法获取IP，跳过 ${sub}.${main}"; return; }
 
     domain_id=$(dp_api_post "Domain.Info" "domain=${main}")
     domain_id=$(echo "$domain_id" | sed 's/.*"id":"\([0-9]*\)".*/\1/')
-    [ -z "$domain_id" ] && { echo "$(date '+%F %T') [DNSPod] 获取域名ID失败: ${main}"; return; }
+    [ -z "$domain_id" ] && { log "$(date '+%F %T') [DNSPod] 获取域名ID失败: ${main}"; return; }
 
     if echo "$my_ip" | grep -qE '^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$'; then
         post_type="Record.Ddns"
@@ -153,9 +162,9 @@ dp_update_domain() {
     record_code=$(echo "$record_rs" | sed 's/.*{"code":"\([0-9]*\)".*/\1/')
 
     if [ "$record_code" = "1" ]; then
-        echo "$(date '+%F %T') [DNSPod] ${sub}.${main} (${rtype}) -> ${my_ip} 更新成功"
+        log "$(date '+%F %T') [DNSPod] ${sub}.${main} (${rtype}) -> ${my_ip} 更新成功"
     else
-        echo "$(date '+%F %T') [DNSPod] ${sub}.${main} (${rtype}) 更新失败: ${record_rs}"
+        log "$(date '+%F %T') [DNSPod] ${sub}.${main} (${rtype}) 更新失败: ${record_rs}"
     fi
 }
 
@@ -192,7 +201,7 @@ ali_update_domain() {
     local my_ip current_ip rrid dm_real dm_escape sub_escape
 
     my_ip=$(get_current_ip "$rtype" "$(if [ "$rtype" = "AAAA" ]; then echo "$IPV6_SRC"; else echo "$IPV4_SRC"; fi)")
-    [ -z "$my_ip" ] && { echo "$(date '+%F %T') [AliDNS] 无法获取IP，跳过 ${sub}.${main}"; return; }
+    [ -z "$my_ip" ] && { log "$(date '+%F %T') [AliDNS] 无法获取IP，跳过 ${sub}.${main}"; return; }
 
     if [ "$sub" = "@" ] || [ -z "$sub" ]; then
         dm_real="$main"
@@ -206,7 +215,7 @@ ali_update_domain() {
     current_ip=$(ali_resolve_ip "$dm_real" "$rtype")
 
     if [ "$my_ip" = "$current_ip" ] && [ -n "$current_ip" ]; then
-        echo "$(date '+%F %T') [AliDNS] ${dm_real} (${rtype}) IP未变化 ${my_ip}"
+        log "$(date '+%F %T') [AliDNS] ${dm_real} (${rtype}) IP未变化 ${my_ip}"
         return
     fi
 
@@ -214,10 +223,10 @@ ali_update_domain() {
 
     if [ -z "$rrid" ]; then
         rrid=$(ali_send_request "AddDomainRecord&DomainName=${main}" "RR=${sub_escape}&Type=${rtype}&Value=${my_ip_escape}" | ali_get_recordid)
-        echo "$(date '+%F %T') [AliDNS] ${dm_real} (${rtype}) 新增记录 -> ${my_ip}"
+        log "$(date '+%F %T') [AliDNS] ${dm_real} (${rtype}) 新增记录 -> ${my_ip}"
     else
         ali_send_request "UpdateDomainRecord" "RR=${sub_escape}&RecordId=${rrid}&Type=${rtype}&Value=${my_ip_escape}" >/dev/null 2>&1
-        echo "$(date '+%F %T') [AliDNS] ${dm_real} (${rtype}) 更新记录 -> ${my_ip}"
+        log "$(date '+%F %T') [AliDNS] ${dm_real} (${rtype}) 更新记录 -> ${my_ip}"
     fi
 }
 
@@ -252,10 +261,10 @@ while true; do
     fi
 
     clean_log
-    echo "$(date '+%F %T') === Cloud DDNS 检查开始 ==="
+    log "$(date '+%F %T') === Cloud DDNS 检查开始 ==="
 
     process_domains
 
-    echo "$(date '+%F %T') === 下次检查: ${DP_TIME}秒后 ==="
+    log "$(date '+%F %T') === 下次检查: ${DP_TIME}秒后 ==="
     sleep "$DP_TIME"
 done

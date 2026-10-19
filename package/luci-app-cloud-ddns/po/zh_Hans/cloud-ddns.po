@@ -111,3 +111,24 @@ msgstr "保存成功"
 
 msgid "保存失败"
 msgstr "保存失败"
+
+msgid "保存中…"
+msgstr "保存中…"
+
+msgid "重启中…"
+msgstr "重启中…"
+
+msgid "重启命令已下发"
+msgstr "重启命令已下发"
+
+msgid "暂无日志。可能原因：服务未启用（DNSPod / AliDNS 都未勾选启用）、未产生输出，或日志已被清理。"
+msgstr "暂无日志。可能原因：服务未启用（DNSPod / AliDNS 都未勾选启用）、未产生输出，或日志已被清理。"
+
+msgid "读取失败"
+msgstr "读取失败"
+
+msgid "自动刷新（10 秒）"
+msgstr "自动刷新（10 秒）"
+
+msgid "最后刷新"
+msgstr "最后刷新"

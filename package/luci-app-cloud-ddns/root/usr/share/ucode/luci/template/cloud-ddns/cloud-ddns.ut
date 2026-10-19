@@ -32,7 +32,12 @@
 		nolog:   sprintf('%J', _('暂无日志')),
 		del:     sprintf('%J', _('删除')),
 		saved:   sprintf('%J', _('保存成功')),
-		failed:  sprintf('%J', _('保存失败'))
+		failed:  sprintf('%J', _('保存失败')),
+		restarting: sprintf('%J', _('重启中…')),
+		restartOk:  sprintf('%J', _('重启命令已下发')),
+		saving:     sprintf('%J', _('保存中…')),
+		noLog:   sprintf('%J', _('暂无日志。可能原因：服务未启用（DNSPod / AliDNS 都未勾选启用）、未产生输出，或日志已被清理。')),
+		loadFail: sprintf('%J', _('读取失败'))
 	};
 -%}
 
@@ -50,29 +55,78 @@
 		failed:  {{ T.failed }}
 	};
 
+	var CD_logTimer = null;
+
 	function CD_updateStatus() {
+		var el = document.getElementById('cd_status');
+
 		XHR.get('{{ url_status }}', null, function(x, d) {
-			var el = document.getElementById('cd_status');
 			if (!el) return;
 			el.innerHTML = (d && d.running)
 				? '<span style="color:#090;font-weight:bold">● ' + CD_TXT.running + '</span>'
 				: '<span style="color:#c00;font-weight:bold">● ' + CD_TXT.stopped + '</span>';
+		}, 15000).catch(function() {
+			if (el) el.innerHTML = '<span style="color:#c00">' + CD_TXT.loadFail + '</span>';
 		});
 	}
 
 	function CD_loadLog() {
+		var ta = document.getElementById('cd_log');
+
 		XHR.get('{{ url_log }}', null, function(x) {
-			var ta = document.getElementById('cd_log');
 			if (!ta) return;
-			var lines = (x.responseText || '').trim().split('\n');
-			ta.value = (lines.length === 0 || (lines.length === 1 && lines[0] === ''))
-				? CD_TXT.nolog : lines.slice(-100).join('\n');
+
+			var txt = (x.responseText || '').replace(/\s+$/, '');
+			var keepBottom = (ta.scrollTop + ta.clientHeight >= ta.scrollHeight - 20);
+
+			ta.value = (txt === '') ? CD_TXT.noLog : txt.split('\n').slice(-200).join('\n');
+			ta.scrollTop = keepBottom ? ta.scrollHeight : 0;
+
+			var mt = document.getElementById('cd_logtime');
+			if (mt) mt.innerHTML = new Date().toLocaleTimeString();
+		}, 15000).catch(function() {
+			if (ta) ta.value = CD_TXT.loadFail;
 		});
 	}
 
+	/* 日志自动刷新开关（默认开，10s 一次） */
+	function CD_setAutoLog(on) {
+		if (CD_logTimer) { clearInterval(CD_logTimer); CD_logTimer = null; }
+		if (on) CD_logTimer = setInterval(CD_loadLog, 10000);
+	}
+
+	/* 按钮即时反馈：busy 期间禁用 + 换文案，结束后还原 */
+	function CD_busy(btn, busy, busyText, doneText) {
+		if (!btn) return;
+		if (busy) {
+			btn.oldText = btn.innerHTML;
+			btn.disabled = true;
+			btn.innerHTML = busyText;
+		}
+		else if (doneText) {
+			btn.innerHTML = doneText;
+			setTimeout(function() {
+				btn.innerHTML = btn.oldText;
+				btn.disabled = false;
+			}, 1800);
+		}
+		else {
+			btn.innerHTML = btn.oldText;
+			btn.disabled = false;
+		}
+	}
+
 	function CD_restart() {
+		var btn = document.getElementById('cd_btn_restart');
+
+		CD_busy(btn, true, CD_TXT.restarting);
+
 		XHR.get('{{ url_restart }}', null, function() {
+			CD_busy(btn, false, null, CD_TXT.restartOk);
 			setTimeout(function() { CD_updateStatus(); CD_loadLog(); }, 2000);
+		}, 20000).catch(function(e) {
+			CD_busy(btn, false);
+			alert(CD_TXT.failed + ': ' + (e && e.message ? e.message : ''));
 		});
 	}
 
@@ -101,6 +155,7 @@
 
 	function CD_save() {
 		var data = {};
+		var btn = document.getElementById('cd_btn_save');
 
 		new FormData(document.getElementById('cd_form')).forEach(function(v, k) {
 			data[k] = v;
@@ -109,9 +164,15 @@
 		if (data.dnspod_enabled == null) data.dnspod_enabled = '0';
 		if (data.ali_enabled == null) data.ali_enabled = '0';
 
+		CD_busy(btn, true, CD_TXT.saving);
+
 		XHR.post('{{ url_save }}', data, function(x, d) {
+			CD_busy(btn, false);
 			alert((d && d.ok) ? CD_TXT.saved : CD_TXT.failed);
 			setTimeout(function() { CD_updateStatus(); CD_loadLog(); }, 2000);
+		}, 20000).catch(function(e) {
+			CD_busy(btn, false);
+			alert(CD_TXT.failed + ': ' + (e && e.message ? e.message : ''));
 		});
 	}
 
@@ -119,8 +180,15 @@
 		CD_updateStatus();
 		CD_loadLog();
 		CD_toggleMode();
+
+		/* 状态 30s、日志 10s 自动刷新 */
 		setInterval(CD_updateStatus, 30000);
+		CD_setAutoLog(true);
+
 		document.getElementById('dnspod_mode').addEventListener('change', CD_toggleMode);
+		document.getElementById('cd_autolog').addEventListener('change', function(ev) {
+			CD_setAutoLog(ev.target.checked);
+		});
 		document.getElementById('cd_form').addEventListener('submit', function(ev) {
 			ev.preventDefault();
 			CD_save();
@@ -262,8 +330,8 @@
 		</div>
 
 		<div class="cbi-page-actions">
-			<button class="btn cbi-button cbi-button-apply" type="submit">{{ _('保存并应用') }}</button>
-			<button class="btn cbi-button" type="button" onclick="CD_restart()">{{ _('重启服务') }}</button>
+			<button id="cd_btn_save" class="btn cbi-button cbi-button-apply" type="submit">{{ _('保存并应用') }}</button>
+			<button id="cd_btn_restart" class="btn cbi-button" type="button" onclick="CD_restart()">{{ _('重启服务') }}</button>
 		</div>
 	</div>
 </form>
@@ -273,6 +341,10 @@
 	<textarea id="cd_log" class="cbi-input-textarea" readonly style="width:100%;height:300px;font-family:monospace;font-size:12px"></textarea>
 	<div class="cbi-page-actions">
 		<button class="btn cbi-button" type="button" onclick="CD_loadLog()">{{ _('刷新日志') }}</button>
+		<label style="margin-left:1em">
+			<input type="checkbox" id="cd_autolog" checked="checked" /> {{ _('自动刷新（10 秒）') }}
+		</label>
+		<span style="margin-left:1em;color:#888">{{ _('最后刷新') }}: <span id="cd_logtime">—</span></span>
 	</div>
 </div>
 
