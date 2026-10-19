@@ -334,11 +334,29 @@ jobs:
 
           make download -j"$NPROC"
 
+          # 编译日志落盘：Actions 日志下载需要仓库 admin 权限（匿名 API 403），
+          # 编译失败时把完整日志存进 artifact + 关键错误写进 step summary，
+          # 这样后续定位不再依赖日志下载权限。
+          BUILD_LOG_DIR="$RUNNER_TEMP/build-logs"
+          mkdir -p "$BUILD_LOG_DIR"
+
+          echo "=== 编译前磁盘 ==="
+          df -h / /workdir 2>/dev/null || df -h || true
+
           if [ "${{ inputs.verbose }}" = "true" ]; then
-            make -j1 V=s CC="ccache gcc" CXX="ccache g++"
-          elif ! make -j"$NPROC" CC="ccache gcc" CXX="ccache g++"; then
+            make -j1 V=s CC="ccache gcc" CXX="ccache g++" 2>&1 | tee "$BUILD_LOG_DIR/build-verbose.log"
+            BUILD_RC=$?
+          elif ! make -j"$NPROC" CC="ccache gcc" CXX="ccache g++" 2>&1 | tee "$BUILD_LOG_DIR/build-j${NPROC}.log"; then
             echo "Parallel build failed; retrying with one job"
-            make -j1 V=s CC="ccache gcc" CXX="ccache g++"
+            make -j1 V=s CC="ccache gcc" CXX="ccache g++" 2>&1 | tee "$BUILD_LOG_DIR/build-j1.log"
+            BUILD_RC=$?
+          else
+            BUILD_RC=0
+          fi
+
+          if [ "$BUILD_RC" -ne 0 ]; then
+            echo "ERROR: build failed with exit code $BUILD_RC; logs saved in $BUILD_LOG_DIR" >&2
+            exit "$BUILD_RC"
           fi
 
           mapfile -t SYSUPGRADES < <(find bin/targets -type f \
@@ -458,6 +476,47 @@ jobs:
           cp "$SYSUPGRADE" "$GITHUB_WORKSPACE/firmware_collection/$FW_NAME"
           echo "Built: $FW_NAME ($(du -h "$SYSUPGRADE" | cut -f1))"
           echo "status=success" >> "$GITHUB_OUTPUT"
+
+      - name: Summarize build failure
+        if: failure()
+        run: |
+          LOG_DIR="$RUNNER_TEMP/build-logs"
+          SUMMARY="$GITHUB_STEP_SUMMARY"
+          {
+            echo "## 编译失败摘要"
+            echo
+            echo "- config: ${{ env.PROXY }}"
+            echo "- run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo
+          } >> "$SUMMARY"
+          LATEST=$(ls -t "$LOG_DIR"/*.log 2>/dev/null | head -1 || true)
+          if [ -n "$LATEST" ]; then
+            echo "### 关键错误行（$(basename "$LATEST")）" >> "$SUMMARY"
+            echo '```' >> "$SUMMARY"
+            grep -aE "Error [0-9]|failed to build|ERROR:|error\[|error:" "$LATEST" | tail -40 >> "$SUMMARY" || true
+            echo '```' >> "$SUMMARY"
+            echo >> "$SUMMARY"
+            echo "### 日志末尾 120 行" >> "$SUMMARY"
+            echo '```' >> "$SUMMARY"
+            tail -n 120 "$LATEST" >> "$SUMMARY"
+            echo '```' >> "$SUMMARY"
+          else
+            echo "（未找到落盘日志，见上方步骤输出）" >> "$SUMMARY"
+          fi
+          echo >> "$SUMMARY"
+          echo "### 失败时磁盘占用" >> "$SUMMARY"
+          echo '```' >> "$SUMMARY"
+          df -h >> "$SUMMARY" || true
+          du -sh /workdir/openwrt/build_dir /workdir/openwrt/staging_dir /workdir/.ccache 2>/dev/null >> "$SUMMARY" || true
+          echo '```' >> "$SUMMARY"
+
+      - name: Upload build failure log
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-failure-log-${{ env.PROXY }}-${{ env.BUILD_TIME }}
+          path: ${{ runner.temp }}/build-logs
+          if-no-files-found: ignore
 
       - name: Show ccache statistics
         if: always()
