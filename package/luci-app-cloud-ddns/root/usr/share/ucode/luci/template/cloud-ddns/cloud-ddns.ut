@@ -31,7 +31,7 @@
 		stopped: sprintf('%J', _('未运行')),
 		nolog:   sprintf('%J', _('暂无日志')),
 		del:     sprintf('%J', _('删除')),
-		saved:   sprintf('%J', _('保存成功')),
+		saved:   sprintf('%J', _('已保存')),
 		failed:  sprintf('%J', _('保存失败')),
 		restarting: sprintf('%J', _('重启中…')),
 		restartOk:  sprintf('%J', _('重启命令已下发')),
@@ -48,22 +48,6 @@
 -%}
 
 {% include('header') %}
-
-<style type="text/css">
-	/* 自绘弹窗的转圈图标（主题自带 .spinning 时不冲突，这里是兜底） */
-	.cd-spinner {
-		display: inline-block;
-		width: 14px;
-		height: 14px;
-		margin-right: .6em;
-		vertical-align: -2px;
-		border: 2px solid currentColor;
-		border-top-color: transparent;
-		border-radius: 50%;
-		animation: cd-spin .8s linear infinite;
-	}
-	@keyframes cd-spin { to { transform: rotate(360deg); } }
-</style>
 
 <h2 name="content">{{ _('Cloud DDNS') }}</h2>
 
@@ -117,20 +101,10 @@
 	}
 
 	function CD_modalAlert(cls, title, msg, withClose) {
-		var spinning = cls ? cls.split(/\s+/).indexOf('spinning') >= 0 : false;
 		var kids = [];
 
 		if (title) kids.push(CD_node('h4', title));
-		if (spinning) {
-			var p = CD_node('p', null);
-			var sp = CD_node('span', null);
-			sp.className = 'cd-spinner';
-			sp.appendChild(document.createTextNode(msg));
-			p.appendChild(sp);
-			kids.push(p);
-		} else {
-			kids.push(CD_node('p', msg));
-		}
+		kids.push(CD_node('p', msg));
 
 		if (withClose) {
 			var row = document.createElement('div');
@@ -188,9 +162,9 @@
 		if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
 	}
 
-	/* 等待遮罩：保存/重启期间显示，结束后自动关闭 */
+	/* 等待提示：纯文字，不带转圈图标；成功后自动消失，无需用户点确定 */
 	function CD_modalWait(msg) {
-		return CD_modalAlert('notice spinning', '', msg, false);
+		return CD_modalAlert('notice', '', msg, false);
 	}
 
 	function CD_modalDone(msg) {
@@ -257,7 +231,7 @@
 				CD_updateStatus();
 				CD_loadLog();
 				CD_modalDone(CD_txt('restarted', '\u670d\u52a1\u5df2\u91cd\u542f'));
-			}, 2000);
+			}, 800);
 		}, 30000).catch(function(e) {
 			CD_modalAlert('notice', CD_txt('failTitle', '\u5e94\u7528\u5931\u8d25'),
 				CD_txt('failed', '\u4fdd\u5b58\u5931\u8d25') + ': ' + (e && e.message ? e.message : ''), true);
@@ -307,8 +281,8 @@
 				}
 				CD_updateStatus();
 				CD_loadLog();
-				CD_modalDone(CD_txt('applied', '\u914d\u7f6e\u5df2\u5e94\u7528'));
-			}, 2000);
+				CD_modalDone(CD_txt('saved', '\u5df2\u4fdd\u5b58'));
+			}, 800);
 		}, 30000).catch(function(e) {
 			CD_modalAlert('notice', CD_txt('failTitle', '\u5e94\u7528\u5931\u8d25'),
 				CD_txt('failed', '\u4fdd\u5b58\u5931\u8d25') + ': ' + (e && e.message ? e.message : ''), true);
