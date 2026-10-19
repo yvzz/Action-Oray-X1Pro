@@ -373,14 +373,30 @@ jobs:
 
           make download -j$NPROC
 
+          # 编译日志落盘：Actions 日志下载需要仓库 admin 权限（匿名 API 403），
+          # 编译失败时把完整日志存进 artifact + 关键错误写进 step summary，
+          # 这样后续定位不再依赖日志下载权限。
+          BUILD_LOG_DIR="$RUNNER_TEMP/build-logs"
+          mkdir -p "$BUILD_LOG_DIR"
+
+          echo "=== 编译前磁盘 ==="
+          df -h / /workdir 2>/dev/null || df -h || true
+
           # 编译（输出 oray,x1pro 固件）
           if [ "${{ inputs.verbose }}" = "true" ]; then
-            make -j1 V=s CC="ccache gcc" CXX="ccache g++" || exit 1
+            make -j1 V=s CC="ccache gcc" CXX="ccache g++" 2>&1 | tee "$BUILD_LOG_DIR/build-verbose.log"
+            BUILD_RC=$?
+          elif ! make -j$NPROC CC="ccache gcc" CXX="ccache g++" 2>&1 | tee "$BUILD_LOG_DIR/build-j${NPROC}.log"; then
+            echo "Multi-threaded failed, retrying single-threaded..."
+            make -j1 V=s 2>&1 | tee "$BUILD_LOG_DIR/build-j1.log"
+            BUILD_RC=$?
           else
-            if ! make -j$NPROC CC="ccache gcc" CXX="ccache g++"; then
-              echo "Multi-threaded failed, retrying single-threaded..."
-              make -j1 V=s || exit 1
-            fi
+            BUILD_RC=0
+          fi
+
+          if [ "$BUILD_RC" -ne 0 ]; then
+            echo "ERROR: build failed with exit code $BUILD_RC; logs saved in $BUILD_LOG_DIR" >&2
+            exit "$BUILD_RC"
           fi
 
           # 收集固件（oray,x1pro 单 profile，X1Pro 用 uboot 刷机）
@@ -426,6 +442,47 @@ jobs:
         with:
           name: X1Pro-2410-${{ env.PROXY }}-${{ env.BUILD_TIME }}
           path: firmware_collection/*.bin
+
+      - name: Summarize build failure
+        if: failure()
+        run: |
+          LOG_DIR="$RUNNER_TEMP/build-logs"
+          SUMMARY="$GITHUB_STEP_SUMMARY"
+          {
+            echo "## 编译失败摘要"
+            echo
+            echo "- config: ${{ env.PROXY }}"
+            echo "- run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo
+          } >> "$SUMMARY"
+          LATEST=$(ls -t "$LOG_DIR"/*.log 2>/dev/null | head -1 || true)
+          if [ -n "$LATEST" ]; then
+            echo "### 关键错误行（$(basename "$LATEST")）" >> "$SUMMARY"
+            echo '```' >> "$SUMMARY"
+            grep -aE "Error [0-9]|failed to build|ERROR:|error\[|error:" "$LATEST" | tail -40 >> "$SUMMARY" || true
+            echo '```' >> "$SUMMARY"
+            echo >> "$SUMMARY"
+            echo "### 日志末尾 120 行" >> "$SUMMARY"
+            echo '```' >> "$SUMMARY"
+            tail -n 120 "$LATEST" >> "$SUMMARY"
+            echo '```' >> "$SUMMARY"
+          else
+            echo "（未找到落盘日志，见上方步骤输出）" >> "$SUMMARY"
+          fi
+          echo >> "$SUMMARY"
+          echo "### 失败时磁盘占用" >> "$SUMMARY"
+          echo '```' >> "$SUMMARY"
+          df -h >> "$SUMMARY" || true
+          du -sh /workdir/openwrt/build_dir /workdir/openwrt/staging_dir /workdir/.ccache 2>/dev/null >> "$SUMMARY" || true
+          echo '```' >> "$SUMMARY"
+
+      - name: Upload build failure log
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-failure-log-${{ env.PROXY }}-${{ env.BUILD_TIME }}
+          path: ${{ runner.temp }}/build-logs
+          if-no-files-found: ignore
 
   # ── 发布到 Release ──────────────────────────────
   release:
