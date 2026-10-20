@@ -56,23 +56,65 @@ clean_log() {
     fi
 }
 
-# ── Get public IPv4 ──
-get_inet_ipv4() {
-    local ip
-    ip=$(curl -sL --connect-timeout 5 members.3322.org/dyndns/getip)
-    [ -z "$ip" ] && ip=$(curl -sL --connect-timeout 5 api.ip.sb/ip)
-    [ -z "$ip" ] && ip=$(curl -sL --connect-timeout 5 ifconfig.co)
-    [ -z "$ip" ] && ip=$(curl -sL --connect-timeout 5 ipinfo.io/ip)
-    echo -n "$ip"
+# ── IP 合法性校验 ──
+# 关键：IP 源被限流/报错时会返回 "429 Too Many Requests" 这类 HTML 页面；
+# 原逻辑只看「非空」就采纳，于是把整页 HTML 当成 IP 提交给 DNSPod，
+# 表现为 DNSPod 报 code 34「记录的值不正确」。必须先验格式再用。
+is_ipv4() {
+    local ip="$1" o
+    [ -z "$ip" ] && return 1
+    local IFS=.
+    set -- $ip
+    [ $# -eq 4 ] || return 1
+    for o in "$@"; do
+        case "$o" in ''|*[!0-9]*) return 1;; esac
+        [ "$o" -le 255 ] 2>/dev/null || return 1
+    done
+    return 0
 }
 
-# ── Get public IPv6 ──
+is_ipv6() {
+    local ip="$1"
+    [ -z "$ip" ] && return 1
+    case "$ip" in *[!0-9a-fA-F:]*) return 1;; esac
+    [ "${#ip}" -ge 3 ] || return 1
+    return 0
+}
+
+# ── Get public IPv4（逐个源尝试，取到合法 IP 才停）──
+get_inet_ipv4() {
+    local ip u
+    for u in "http://members.3322.org/dyndns/getip" "http://ip.3322.net" \
+             "https://api.ipify.org" "https://api.ip.sb/ip" "http://ifconfig.co"; do
+        ip=$(curl -sL -k --connect-timeout 5 "$u" 2>/dev/null | tr -d '\r\n')
+        if is_ipv4 "$ip"; then echo -n "$ip"; return; fi
+    done
+    echo -n ""
+}
+
+# ── Get public IPv6（逐个源尝试，取到合法 IP 才停）──
 get_inet_ipv6() {
-    local ip
-    ip=$(curl -6 -sL --connect-timeout 5 ifconfig.co)
-    [ -z "$ip" ] && ip=$(curl -6 -sL --connect-timeout 5 v6.ident.me)
-    [ -z "$ip" ] && ip=$(curl -6 -sL --connect-timeout 5 api-ipv6.ip.sb/ip)
-    echo -n "$ip"
+    local ip u
+    for u in "https://api-ipv6.ip.sb/ip" "http://v6.ident.me" "http://ifconfig.co"; do
+        ip=$(curl -6 -sL -k --connect-timeout 5 "$u" 2>/dev/null | tr -d '\r\n')
+        if is_ipv6 "$ip"; then echo -n "$ip"; return; fi
+    done
+    echo -n ""
+}
+
+# ── 公网 IP 缓存 ──
+# 一个检查周期内每条域名都要问一次公网 IP，N 条域名就把外部请求放大 N 倍，
+# 很容易把 IP 源打到 429。周期内取到一次就复用。
+CD_IPV4=""; CD_IPV6=""; CD_IPV4_DONE=0; CD_IPV6_DONE=0
+
+get_inet_ip_cached() {
+    if [ "$1" = "AAAA" ]; then
+        if [ "$CD_IPV6_DONE" != "1" ]; then CD_IPV6=$(get_inet_ipv6); CD_IPV6_DONE=1; fi
+        echo -n "$CD_IPV6"
+    else
+        if [ "$CD_IPV4_DONE" != "1" ]; then CD_IPV4=$(get_inet_ipv4); CD_IPV4_DONE=1; fi
+        echo -n "$CD_IPV4"
+    fi
 }
 
 # ── Get WAN interface IPv4 ──
@@ -89,9 +131,9 @@ get_wan_ipv6() {
 get_current_ip() {
     local rtype=$1 src=$2
     if [ "$rtype" = "AAAA" ]; then
-        if [ "$src" = "wan" ]; then get_wan_ipv6; else get_inet_ipv6; fi
+        if [ "$src" = "wan" ]; then get_wan_ipv6; else get_inet_ip_cached "AAAA"; fi
     else
-        if [ "$src" = "wan" ]; then get_wan_ipv4; else get_inet_ipv4; fi
+        if [ "$src" = "wan" ]; then get_wan_ipv4; else get_inet_ip_cached "A"; fi
     fi
 }
 
@@ -244,6 +286,8 @@ ali_update_domain() {
 # ── Process all domains ──
 process_domains() {
     local i=0
+    # 新的一轮检查：清掉公网 IP 缓存，本轮内多条域名共用同一次查询结果
+    CD_IPV4_DONE=0; CD_IPV6_DONE=0
     while uci -q get "cloud-ddns.@domain[$i]" >/dev/null 2>&1; do
         local provider main sub rtype
         provider=$(uci_get "cloud-ddns.@domain[$i].provider")
