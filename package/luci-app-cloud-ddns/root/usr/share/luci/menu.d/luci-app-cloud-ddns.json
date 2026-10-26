@@ -26,6 +26,13 @@
 			"function": "act_log"
 		}
 	},
+	"admin/services/cloud-ddns/clear": {
+		"action": {
+			"type": "function",
+			"module": "luci.controller.cloud_ddns",
+			"function": "act_clear"
+		}
+	},
 	"admin/services/cloud-ddns/restart": {
 		"action": {
 			"type": "function",
