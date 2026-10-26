@@ -103,6 +103,9 @@ msgstr "运行日志"
 msgid "刷新日志"
 msgstr "刷新日志"
 
+msgid "清空日志"
+msgstr "清空日志"
+
 msgid "服务状态"
 msgstr "服务状态"
 

@@ -22,6 +22,7 @@
 
 	let url_status  = dispatcher.build_url('admin/services/cloud-ddns/status');
 	let url_log     = dispatcher.build_url('admin/services/cloud-ddns/log');
+	let url_clear   = dispatcher.build_url('admin/services/cloud-ddns/clear');
 	let url_restart = dispatcher.build_url('admin/services/cloud-ddns/restart');
 	let url_save    = dispatcher.build_url('admin/services/cloud-ddns/save');
 
@@ -172,6 +173,12 @@
 		window.setTimeout(CD_modalHide, 1200);
 	}
 
+	/* 状态圆点：用 CSS 圆点替代 U+25CF 字符。后者在加粗下字形整体偏高，
+	   会把「● 运行中」整组顶得比左侧标题偏上；改用 inline-flex 让圆点与文字垂直居中 */
+	function CD_dot(color) {
+		return '<span style="display:inline-block;width:.6em;height:.6em;border-radius:50%;background:' + color + ';margin-right:.4em"></span>';
+	}
+
 	function CD_updateStatus() {
 		var el = document.getElementById('cd_status');
 
@@ -179,12 +186,12 @@
 			if (!el) return;
 
 			if (d && d.running) {
-				el.innerHTML = '<span style="color:#090;font-weight:bold">\u25cf ' + CD_txt('running', '\u8fd0\u884c\u4e2d') + '</span>';
+				el.innerHTML = '<span style="display:inline-flex;align-items:center;color:#090;font-weight:bold">' + CD_dot('#090') + CD_txt('running', '\u8fd0\u884c\u4e2d') + '</span>';
 			}
 			else {
 				/* 未运行时把「为什么不跑」直接显示出来，省得对着状态猜 */
 				var why = (d && d.reason) ? '(' + String(d.reason).replace(/[<>&]/g, '') + ')' : '';
-				el.innerHTML = '<span style="color:#c00;font-weight:bold">\u25cf ' + CD_txt('stopped', '\u672a\u8fd0\u884c') + '</span>' +
+				el.innerHTML = '<span style="display:inline-flex;align-items:center;color:#c00;font-weight:bold">' + CD_dot('#c00') + CD_txt('stopped', '\u672a\u8fd0\u884c') + '</span>' +
 					'<span style="color:#888;font-weight:normal;margin-left:.5em">' + why + '</span>';
 			}
 		}, 15000).catch(function() {
@@ -210,6 +217,20 @@
 			if (mt) mt.innerHTML = new Date().toLocaleTimeString();
 		}, 15000).catch(function() {
 			if (ta) ta.value = CD_txt('loadFail', '\u8bfb\u53d6\u5931\u8d25');
+		});
+	}
+
+	function CD_clearLog() {
+		XHR.get('{{ url_clear }}', null, function(x, d) {
+			if (d && d.ok === false) {
+				CD_modalAlert('notice', CD_txt('failTitle', '\u5e94\u7528\u5931\u8d25'), (d.error || ''), true);
+				return;
+			}
+			/* 清空成功后重新拉日志：后端会返回一条「日志已清空」标记行作为反馈 */
+			CD_loadLog();
+		}, 15000).catch(function(e) {
+			CD_modalAlert('notice', CD_txt('failTitle', '\u5e94\u7528\u5931\u8d25'),
+				(e && e.message ? e.message : ''), true);
 		});
 	}
 
@@ -454,6 +475,7 @@
 	<textarea id="cd_log" class="cbi-input-textarea" readonly style="width:100%;height:300px;font-family:monospace;font-size:12px"></textarea>
 	<div class="cbi-page-actions">
 		<button class="btn cbi-button" type="button" onclick="CD_loadLog()">{{ _('刷新日志') }}</button>
+		<button class="btn cbi-button" type="button" onclick="CD_clearLog()" style="margin-left:1em">{{ _('清空日志') }}</button>
 		<label style="margin-left:1em">
 			<input type="checkbox" id="cd_autolog" checked="checked" /> {{ _('自动刷新（10 秒）') }}
 		</label>

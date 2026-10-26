@@ -86,6 +86,26 @@ return {
 		http.write(log);
 	},
 
+	act_clear: function(env) {
+		let http = req(env);
+		let err = null;
+
+		try {
+			/*
+			 * 清空日志文件，并写一条带时间戳的「已清空」标记。
+			 * 不能只 truncate 成空：act_log 在文件为空时会回退去读 syslog
+			 * （logread -e cloud-ddns），里面还有旧输出，页面会立刻又显示旧日志。
+			 * 留一条标记行既让文件非空（拦住回退），也给用户明确的清空反馈。
+			 */
+			let f = popen("date '+%F %T 日志已清空' > /var/log/cloud-ddns.log", 'r');
+			if (f) f.close();
+		} catch (e) {
+			err = sprintf('%s', e);
+		}
+
+		reply(http, err);
+	},
+
 	act_restart: function(env) {
 		let http = req(env);
 		let err = null;
