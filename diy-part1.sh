@@ -94,9 +94,7 @@ fi
 VNT2_MK="$OPENWRT/package/luci-app-vnt2/luci-app-vnt2/Makefile"
 if [ -f "$VNT2_MK" ]; then
 	if grep -q '/usr/libexec/vnt2/vnt2-package.sh postinst' "$VNT2_MK"; then
-		sed -i 's|/usr/libexec/vnt2/vnt2-package.sh postinst "\$@"|[ -f /usr/libexec/vnt2/vnt2-package.sh ] \&\& /usr/libexec/vnt2/vnt2-package.sh postinst "\$@" || true|' "$VNT2_MK"
-		sed -i 's|/usr/libexec/vnt2/vnt2-package.sh prerm "\$@"|[ -f /usr/libexec/vnt2/vnt2-package.sh ] \&\& /usr/libexec/vnt2/vnt2-package.sh prerm "\$@" || true|' "$VNT2_MK"
-		sed -i 's|/usr/libexec/vnt2/vnt2-package.sh postrm "\$@"|[ -f /usr/libexec/vnt2/vnt2-package.sh ] \&\& /usr/libexec/vnt2/vnt2-package.sh postrm "\$@" || true|' "$VNT2_MK"
+		perl -pi -e 's{(/usr/libexec/vnt2/vnt2/package\.sh) (\w+) ("\\\$@")}{[ -f $1 ] \&\& $1 $2 $3 || true}g' "$VNT2_MK"
 		echo "[ok] VNT2 Makefile: postinst/prerm/postrm 加文件存在性检查"
 	else
 		echo "[info] VNT2 Makefile 无需修补（postinst 格式已变或已修复）"
