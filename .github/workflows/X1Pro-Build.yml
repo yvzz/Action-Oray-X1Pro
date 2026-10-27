@@ -354,15 +354,21 @@ jobs:
             exit 1
           fi
 
+          # `make ... | tee` 管道的退出码是 tee 的（无 pipefail），
+          # 直接 `! make | tee` 或 `BUILD_RC=$?` 都会把 make 的失败吞成 0，
+          # 既不触发单线程重试、又把失败误判为成功，最后只报「No firmware found」。
+          # 用 ${PIPESTATUS[0]} 取 make 的真实退出码（管道后紧跟读取）。
           if [ "${{ inputs.verbose }}" = "true" ]; then
             make -j1 V=s CC="ccache gcc" CXX="ccache g++" 2>&1 | tee "$BUILD_LOG_DIR/build-verbose.log"
-            BUILD_RC=$?
-          elif ! make -j"$NPROC" CC="ccache gcc" CXX="ccache g++" 2>&1 | tee "$BUILD_LOG_DIR/build-j${NPROC}.log"; then
-            echo "Parallel build failed; retrying with one job"
-            make -j1 V=s CC="ccache gcc" CXX="ccache g++" 2>&1 | tee "$BUILD_LOG_DIR/build-j1.log"
-            BUILD_RC=$?
+            BUILD_RC=${PIPESTATUS[0]}
           else
-            BUILD_RC=0
+            make -j"$NPROC" CC="ccache gcc" CXX="ccache g++" 2>&1 | tee "$BUILD_LOG_DIR/build-j${NPROC}.log"
+            BUILD_RC=${PIPESTATUS[0]}
+            if [ "$BUILD_RC" -ne 0 ]; then
+              echo "Multi-threaded failed, retrying single-threaded..."
+              make -j1 V=s CC="ccache gcc" CXX="ccache g++" 2>&1 | tee "$BUILD_LOG_DIR/build-j1.log"
+              BUILD_RC=${PIPESTATUS[0]}
+            fi
           fi
 
           if [ "$BUILD_RC" -ne 0 ]; then
