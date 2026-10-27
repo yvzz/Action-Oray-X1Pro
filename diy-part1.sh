@@ -85,6 +85,26 @@ else
 	echo "WARNING: failed to clone luci-app-vnt2; firmware will build without VNT2" >&2
 fi
 
+# ---- Fix VNT2 postinst/prerm/postrm: vnt2-package.sh 在 package/install 阶段可能未就位 ----
+# VNT2 的 Makefile 定义了 postinst 调用 /usr/libexec/vnt2/vnt2-package.sh，
+# 但该文件在 package/install 执行时可能尚未安装到目标路径，导致 bash 报 127
+#（No such file or directory）→ 整个构建失败。
+# 实际上 vnt2-package.sh 首行已检查 IPKG_INSTROOT 并 exit 0（构建阶段不执行），
+# 但文件不存在时 bash 在调用前就报错了。加 [ -f ] 守卫让构建跳过。
+VNT2_MK="$OPENWRT/package/luci-app-vnt2/luci-app-vnt2/Makefile"
+if [ -f "$VNT2_MK" ]; then
+	if grep -q '/usr/libexec/vnt2/vnt2-package.sh postinst' "$VNT2_MK"; then
+		sed -i 's|/usr/libexec/vnt2/vnt2-package.sh postinst "\$@"|[ -f /usr/libexec/vnt2/vnt2-package.sh ] \&\& /usr/libexec/vnt2/vnt2-package.sh postinst "\$@" || true|' "$VNT2_MK"
+		sed -i 's|/usr/libexec/vnt2/vnt2-package.sh prerm "\$@"|[ -f /usr/libexec/vnt2/vnt2-package.sh ] \&\& /usr/libexec/vnt2/vnt2-package.sh prerm "\$@" || true|' "$VNT2_MK"
+		sed -i 's|/usr/libexec/vnt2/vnt2-package.sh postrm "\$@"|[ -f /usr/libexec/vnt2/vnt2-package.sh ] \&\& /usr/libexec/vnt2/vnt2-package.sh postrm "\$@" || true|' "$VNT2_MK"
+		echo "[ok] VNT2 Makefile: postinst/prerm/postrm 加文件存在性检查"
+	else
+		echo "[info] VNT2 Makefile 无需修补（postinst 格式已变或已修复）"
+	fi
+else
+	echo "WARNING: VNT2 Makefile not found at $VNT2_MK" >&2
+fi
+
 # ---- 全能推送 (zzsj0928/luci-app-pushbot) ----
 # 仓库顶层为单一包 luci-app-pushbot/（Makefile + htdocs + po + root），
 # v6.01 起纯 ucode 架构（LUCI_PKGARCH:=all），平台无关，需 LuCI ≥ 23.05。
