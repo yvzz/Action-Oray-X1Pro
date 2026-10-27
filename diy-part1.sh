@@ -50,11 +50,18 @@ echo "  → aurora + pushbot packages cloned"
 #      导致 bash 报 127(No such file or directory) → 整个构建失败。
 #      实际上 vnt2-package.sh 首行已检查 IPKG_INSTROOT 并 exit 0，
 #      但文件不存在时 bash 在调用前就报错了。加 [ -f ] 守卫。
+#      注意：Makefile 里是 "$$@"（Makefile 转义），正则必须用行级匹配 + 捕获组
+#      保留尾部，不能直接匹配 "$@"（曾因此失配，修复静默无效）。
 VNT2_MK="$OPENWRT/package/luci-app-vnt2/luci-app-vnt2/Makefile"
 if [ -f "$VNT2_MK" ]; then
   if grep -q '/usr/libexec/vnt2/vnt2-package.sh postinst' "$VNT2_MK"; then
-    perl -pi -e 's{(/usr/libexec/vnt2/vnt2/package\.sh) (\w+) ("\\\$@")}{[ -f $1 ] \&\& $1 $2 $3 || true}g' "$VNT2_MK"
-    echo "  → VNT2 Makefile: postinst/prerm/postrm 加文件存在性检查"
+    perl -pi -e 's{^(/usr/libexec/vnt2/vnt2-package\.sh) (\w+)( .*)$}{[ -f $1 ] \&\& $1 $2$3 || true}' "$VNT2_MK"
+    if grep -q '\[ -f /usr/libexec/vnt2/vnt2-package.sh \]' "$VNT2_MK"; then
+      echo "  → VNT2 Makefile: postinst/prerm/postrm 加文件存在性检查"
+    else
+      echo "  → [ERROR] VNT2 Makefile patch did not apply!" >&2
+      exit 1
+    fi
   else
     echo "  → [info] VNT2 Makefile 无需修补（postinst 格式已变或已修复）"
   fi
