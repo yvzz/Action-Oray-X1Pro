@@ -10,36 +10,20 @@ OPENWRT="$WORKSPACE/openwrt"
 
 echo "=== DIY Part 1: X1 Pro setup ==="
 
-# 0. 拷贝内嵌的第三方包源码到构建树 package/
-# 说明：luci-app-cloud-ddns 等包以源码形式内嵌在仓库 $WORKSPACE/package/ 下，
-# 但 openwrt 构建树在 $OPENWRT/package/（/workdir/openwrt/package/），build job
-# 不会整体 copy $GITHUB_WORKSPACE/package/，必须在此显式拷贝，make defconfig
-# 才能扫描到这些包。参考 pushbot 的 clone 机制（也是写入 $OPENWRT/package/）。
-for embedded_pkg in luci-app-cloud-ddns; do
-  src="$WORKSPACE/package/$embedded_pkg"
-  dest="$OPENWRT/package/$embedded_pkg"
-  if [ -d "$src" ]; then
-    rm -rf "$dest"
-    cp -a "$src" "$dest"
-    echo "  → embedded $embedded_pkg copied from $src"
-  else
-    echo "  [WARN] $src not found locally; content of \$WORKSPACE/package:" >&2
-    ls -la "$WORKSPACE/package/" 2>&1 | head -20 >&2
-    echo "  [info] cloning from github.com/yvzz/luci-app-cloud-ddns"
-    rm -rf "$dest"
-    if git clone --depth=1 "https://github.com/yvzz/luci-app-cloud-ddns" "$dest"; then
-      echo "  → embedded $embedded_pkg cloned to $dest"
-    else
-      echo "  [ERROR] failed to clone $embedded_pkg" >&2
-      exit 1
-    fi
-  fi
-  if [ ! -f "$dest/Makefile" ]; then
-    echo "  [ERROR] $embedded_pkg Makefile missing after copy/clone" >&2
-    exit 1
-  fi
-  echo "  → embedded $embedded_pkg ready (Makefile present)"
-done
+# 0. Clone luci-app-cloud-ddns from GitHub（始终从上游拉取，不内嵌源码）
+CLOUDDDNS_DEST="$OPENWRT/package/luci-app-cloud-ddns"
+rm -rf "$CLOUDDDNS_DEST"
+if git clone --depth=1 "https://github.com/yvzz/luci-app-cloud-ddns" "$CLOUDDDNS_DEST"; then
+  echo "  → luci-app-cloud-ddns cloned from GitHub"
+else
+  echo "  [ERROR] failed to clone luci-app-cloud-ddns" >&2
+  exit 1
+fi
+if [ ! -f "$CLOUDDDNS_DEST/Makefile" ]; then
+  echo "  [ERROR] luci-app-cloud-ddns Makefile missing after clone" >&2
+  exit 1
+fi
+echo "  → luci-app-cloud-ddns ready (Makefile present)"
 
 # 1. Clone third-party packages into package/ (参照 TR3000)
 #    直接 clone 避免 feeds 分支/index 问题
