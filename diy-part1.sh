@@ -46,6 +46,24 @@ for repo in luci-theme-aurora luci-app-aurora-config luci-app-bandix openwrt-ban
 done
 echo "  → aurora + pushbot packages cloned"
 
+# 1b1. Fix VNT2 postinst: vnt2-package.sh 在 package/install 阶段可能未就位
+#      导致 bash 报 127(No such file or directory) → 整个构建失败。
+#      实际上 vnt2-package.sh 首行已检查 IPKG_INSTROOT 并 exit 0，
+#      但文件不存在时 bash 在调用前就报错了。加 [ -f ] 守卫。
+VNT2_MK="$OPENWRT/package/luci-app-vnt2/luci-app-vnt2/Makefile"
+if [ -f "$VNT2_MK" ]; then
+  if grep -q '/usr/libexec/vnt2/vnt2-package.sh postinst' "$VNT2_MK"; then
+    sed -i 's|/usr/libexec/vnt2/vnt2-package.sh postinst "\$@"|[ -f /usr/libexec/vnt2/vnt2-package.sh ] \&\& /usr/libexec/vnt2/vnt2-package.sh postinst "\$@" || true|' "$VNT2_MK"
+    sed -i 's|/usr/libexec/vnt2/vnt2-package.sh prerm "\$@"|[ -f /usr/libexec/vnt2/vnt2-package.sh ] \&\& /usr/libexec/vnt2/vnt2-package.sh prerm "\$@" || true|' "$VNT2_MK"
+    sed -i 's|/usr/libexec/vnt2/vnt2-package.sh postrm "\$@"|[ -f /usr/libexec/vnt2/vnt2-package.sh ] \&\& /usr/libexec/vnt2/vnt2-package.sh postrm "\$@" || true|' "$VNT2_MK"
+    echo "  → VNT2 Makefile: postinst/prerm/postrm 加文件存在性检查"
+  else
+    echo "  → [info] VNT2 Makefile 无需修补（postinst 格式已变或已修复）"
+  fi
+else
+  echo "  → [WARN] VNT2 Makefile not found at $VNT2_MK" >&2
+fi
+
 # 1b2. NPC 升级到 0.34（djylb/nps-openwrt）
 #   上游 immortalwrt/packages 的 net/nps 是 Go 源码编译、版本停在 0.26.24，
 #   且同一个包同时产出 npc + nps 两个包。改用 djylb 的 npc 包（0.34.7，下载官方
