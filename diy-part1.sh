@@ -152,6 +152,33 @@ else
 	echo "WARNING: failed to clone nps-openwrt; npc stays at feeds 0.26.24 without LuCI UI" >&2
 fi
 
+# ---- rtp2httpd (stackia/rtp2httpd: IPTV 组播 RTP/RTSP 转 HTTP) ----
+# 上游仓库不是标准 feed 布局：两个包在 openwrt-support/ 下（rtp2httpd + luci-app-rtp2httpd），
+# 且默认 Makefile 用 $(CURDIR)/../../ 整仓源码编译，直接把子目录塞进 package/ 会找不到源码。
+# 故 clone 后只拷两个包子目录，并换成上游给固件维护者准备的 Makefile.versioned
+#（固定 RELEASE_VERSION + PKG_HASH，从 codeload 下 release tarball，构建可离线复现）。
+# clone 失败直接 exit 1：否则 make defconfig 会静默丢弃 CONFIG_PACKAGE_rtp2httpd 符号，
+# 少功能而不报错比构建失败更难排查。
+RTP2HTTPD_SRC="$WORKSPACE/.rtp2httpd-src"
+rm -rf "$RTP2HTTPD_SRC" "$OPENWRT/package/rtp2httpd" "$OPENWRT/package/luci-app-rtp2httpd"
+if git clone --depth 1 https://github.com/stackia/rtp2httpd "$RTP2HTTPD_SRC"; then
+	for pkg in rtp2httpd luci-app-rtp2httpd; do
+		cp -a "$RTP2HTTPD_SRC/openwrt-support/$pkg" "$OPENWRT/package/$pkg"
+		install -m 0644 "$OPENWRT/package/$pkg/Makefile.versioned" "$OPENWRT/package/$pkg/Makefile"
+		rm -f "$OPENWRT/package/$pkg/Makefile.versioned"
+	done
+	rm -rf "$RTP2HTTPD_SRC"
+	if [ -f "$OPENWRT/package/rtp2httpd/Makefile" ] && [ -f "$OPENWRT/package/luci-app-rtp2httpd/Makefile" ]; then
+		echo "[ok] rtp2httpd + luci-app-rtp2httpd ready (versioned Makefile)"
+	else
+		echo "ERROR: rtp2httpd package Makefile missing after copy" >&2
+		exit 1
+	fi
+else
+	echo "ERROR: failed to clone rtp2httpd" >&2
+	exit 1
+fi
+
 # ---- Fix sysupgrade failure on oray,x1pro ----
 # U-Boot 未在设备树 chosen 节点设置 rootdisk 属性,
 # 导致 export_fitblk_bootdev() 检测失败 → CI_METHOD 为空 → fit_do_upgrade return 1 → 固件未写入.
