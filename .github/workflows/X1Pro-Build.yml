@@ -577,7 +577,7 @@ jobs:
           {
             printf '## ImmortalWrt X1 Pro (%s)\n\n' "$PROXY"
             printf '**源码版本:** ImmortalWrt %s (%s)\n' "$SOURCE_REF" "$SOURCE_COMMIT"
-            printf '**目标设备:** Oray X1 Pro v1\n'
+            printf '**目标设备:** Oray X1 Pro\n'
             printf '**代理版本:** %s\n' "$PROXY"
             printf '**固定标签:** %s\n' "$RELEASE_TAG"
             printf '**固件格式:** sysupgrade TAR (.bin)\n'

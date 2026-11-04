@@ -1,6 +1,6 @@
 # Oray X1 Pro ImmortalWrt 固件
 
-本仓库为 Oray X1 Pro v1 构建单用途 HomeProxy 固件。源码固定为官方
+本仓库为 Oray X1 Pro 构建单用途 HomeProxy 固件。源码固定为官方
 [ImmortalWrt `v25.12.1`](https://github.com/immortalwrt/immortalwrt/releases/tag/v25.12.1)
 （commit `a3378d1a2c15beb2faf4b0bce9c00f07143efa29`），避免构建结果随分支移动。
 

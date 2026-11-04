@@ -51,14 +51,13 @@ diff --git a/target/linux/mediatek/filogic/base-files/lib/upgrade/platform.sh b/
 diff --git a/target/linux/mediatek/image/filogic.mk b/target/linux/mediatek/image/filogic.mk
 --- a/target/linux/mediatek/image/filogic.mk
 +++ b/target/linux/mediatek/image/filogic.mk
-@@ -2834,6 +2834,24 @@ define Device/nradio_c8-668gl
+@@ -2834,6 +2834,23 @@ define Device/nradio_c8-668gl
  endef
  TARGET_DEVICES += nradio_c8-668gl
  
 +define Device/oray_x1pro
 +  DEVICE_VENDOR := Oray
 +  DEVICE_MODEL := X1 Pro
-+  DEVICE_VARIANT := v1
 +  DEVICE_DTS := mt7981b-oray-x1-pro
 +  DEVICE_DTS_DIR := ../dts
 +  BOARD_NAME := oray_x1pro

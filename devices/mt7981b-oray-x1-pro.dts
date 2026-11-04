@@ -5,7 +5,7 @@
 #include "mt7981b.dtsi"
 
 / {
-	model = "Oray X1 Pro v1";
+	model = "Oray X1 Pro";
 	compatible = "oray,x1pro", "mediatek,mt7981";
 
 	aliases {
