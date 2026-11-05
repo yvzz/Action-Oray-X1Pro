@@ -5,8 +5,8 @@ permissions:
   actions: write
 
 on:
-  push:
-    branches: [v24.10]
+  # push:
+    # branches: [v24.10]
   schedule:
     - cron: 0 20 */3 * *   # UTC 00:00 = 北京 04:00，每3天一次
   repository_dispatch:
@@ -574,11 +574,10 @@ jobs:
 
           # 将发布说明写入 release.txt（softprops/action-gh-release 用 body_path 读取）
           {
-            printf '## ImmortalWrt X1Pro Firmware\n\n'
+            printf '**源码版本:** ImmortalWrt v24.10-6.6\n'
             printf '**目标设备:** Oray X1 Pro\n'
             printf '**代理版本:** %s\n' "${{ env.PROXY }}"
             printf '**固定标签:** %s\n' "$RELEASE_TAG"
-            printf '**分支版本:** openwrt-24.10-6.6\n'
             printf '**构建开始:** %s\n' "$BUILD_START_TIME"
             printf '**构建结束:** %s\n' "$BUILD_END_TIME"
             if [ -n "$DURATION_LINE" ]; then
