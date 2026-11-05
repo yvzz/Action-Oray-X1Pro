@@ -1,0 +1,128 @@
+#!/bin/sh
+# usbwan-watch —— 检测 USB 上网卡（CDC-ECM / RNDIS / NCM），自动把它设为 wan
+#
+#   典型命名：cdc_ether → eth2，rndis_host → usb0
+#   判定不靠名字（eth2 这种名字换台机器就未必是 USB 卡），而是看 sysfs：
+#   /sys/class/net/<dev>/device 指向 .../usbN/... 才算 USB 网卡。
+#   名字以 usb0..usbN 开头的直接认（RNDIS 默认命名）。
+#
+#   拔掉后回落到 /etc/board.json 里登记的出厂 wan 设备（本机是 eth0）。
+#   只在「出厂默认」和「上次由本服务设置的设备」之间切换，
+#   用户手工指到别的接口时不动它。
+#
+#   调试：USBWAN_DRY=1 只打印不落 uci；USBWAN_SYSFS=<dir> 可换 sysfs 根目录。
+
+NETDIR="${USBWAN_SYSFS:-/sys/class/net}"
+BOARD_JSON=/etc/board.json
+STATE=/tmp/usbwan.state
+POLL=5
+SETTLE=2          # 连续 N 轮（N*POLL 秒）稳定才动手，避开 F50 上电时的假枚举
+
+log() {
+	logger -t usbwan "$*" 2>/dev/null
+	[ -n "$USBWAN_QUIET" ] || echo "usbwan: $*"
+}
+
+board_wan() {
+	local d=""
+	if [ -r "$BOARD_JSON" ]; then
+		d=$(jsonfilter -i "$BOARD_JSON" -e '@.network.wan.device' 2>/dev/null)
+	fi
+	[ -n "$d" ] || d=$(uci -q get network.wan.device)
+	[ -n "$d" ] || d=eth0
+	echo "$d"
+}
+
+is_usb() {
+	case "${1##*/}" in
+		usb[0-9]*) return 0 ;;
+	esac
+	[ -e "$1/device" ] || return 1
+	readlink -f "$1/device" 2>/dev/null | grep -q '/usb[0-9]'
+}
+
+# 多个 USB 网卡时优先挑 carrier=1 的；否则取第一个
+usb_netdev() {
+	local n i first=""
+	for n in "$NETDIR"/*; do
+		i=${n##*/}
+		is_usb "$n" || continue
+		if [ "$(cat "$n/carrier" 2>/dev/null)" = 1 ]; then
+			echo "$i"
+			return 0
+		fi
+		[ -n "$first" ] || first=$i
+	done
+	[ -n "$first" ] && echo "$first"
+}
+
+apply() {
+	local target=$1 cur prev
+	cur=$(uci -q get network.wan.device)
+	prev=$(cat "$STATE" 2>/dev/null)
+
+	if [ "$cur" = "$target" ]; then
+		[ -n "$USBWAN_DRY" ] && log "无需变更（wan.device 已是 $target）"
+		echo "$target" > "$STATE" 2>/dev/null
+		return 0
+	fi
+
+	# 只接管「出厂默认设备」或「上次由本服务设置的设备」
+	if [ -n "$cur" ] && [ "$cur" != "$BOARD" ] && [ "$cur" != "$prev" ]; then
+		log "wan.device 当前为 $cur（非出厂/非本服务设置），跳过自动切换"
+		return 0
+	fi
+
+	log "wan.device: ${cur:-<未设置>} -> $target"
+	if [ -n "$USBWAN_DRY" ]; then
+		return 0
+	fi
+
+	ifdown wan 2>/dev/null
+	uci set network.wan.device="$target"
+	uci commit network
+	echo "$target" > "$STATE"
+	# 用 netifd 的 reload（只重算变更的接口）；不走 /etc/init.d/network reload，
+	# 那个还会顺带 wifi reload_legacy，会把无线也踢一下
+	ubus call network reload >/dev/null 2>&1 || /etc/init.d/network reload
+	sleep 1
+	ifup wan
+
+	# USB 网卡刚接入时 DHCP 偶尔卡在 pending，等 12 秒没起来就再拉一次
+	if is_usb "$NETDIR/$target"; then
+		local i=0
+		while [ "$i" -lt 6 ]; do
+			ifstatus wan 2>/dev/null | grep -q '"up": true' && return 0
+			i=$((i + 1))
+			sleep 2
+		done
+		log "wan 12 秒内未 up，重新拉起一次"
+		ifdown wan 2>/dev/null
+		sleep 1
+		ifup wan
+	fi
+}
+
+BOARD=$(board_wan)
+[ -f "$STATE" ] || echo "$BOARD" > "$STATE" 2>/dev/null
+
+cand=""
+stable=0
+while :; do
+	dev=$(usb_netdev)
+	want=${dev:-$BOARD}
+
+	if [ "$want" = "$cand" ]; then
+		stable=$((stable + 1))
+	else
+		cand=$want
+		stable=0
+	fi
+
+	if [ "$stable" -ge "$SETTLE" ]; then
+		apply "$cand"
+		stable=0
+	fi
+
+	sleep "$POLL"
+done
