@@ -1,0 +1,20 @@
+#!/bin/sh /etc/rc.common
+# 监听 USB 上网卡（eth2 / usb0 等），插上自动设为 wan，拔掉回落到出厂设备。
+# 逻辑在 /usr/sbin/usbwan-watch。
+
+START=95
+STOP=10
+USE_PROCD=1
+
+start_service() {
+	procd_open_instance
+	procd_set_param command /usr/sbin/usbwan-watch
+	procd_set_param respawn 3600 5 5
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	procd_close_instance
+}
+
+stop_service() {
+	rm -f /tmp/usbwan.state
+}

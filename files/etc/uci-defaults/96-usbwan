@@ -1,0 +1,4 @@
+#!/bin/sh
+# 首次启动时启用 usbwan 服务（files/ overlay 不会自动建 rc.d 链接）
+[ -x /etc/init.d/usbwan ] && /etc/init.d/usbwan enable
+exit 0
