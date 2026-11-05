@@ -1,14 +1,25 @@
 # Oray X1 Pro ImmortalWrt 固件
 
-本仓库为 Oray X1 Pro 构建单用途 HomeProxy 固件。源码固定为官方
+本仓库为 Oray X1 Pro 构建多配置固件（`none` / `openclash` / `homeproxy` / `vpn`）。源码固定为官方
 [ImmortalWrt `v25.12.1`](https://github.com/immortalwrt/immortalwrt/releases/tag/v25.12.1)
 （commit `a3378d1a2c15beb2faf4b0bce9c00f07143efa29`），避免构建结果随分支移动。
 
 ## 固件内容
 
-预装内容包括基础路由与 Wi-Fi、LuCI HTTPS 中文界面、USB3 存储与自动挂载、USB网络共享，以及 HomeProxy 使用的完整 sing-box、firewall4、dnsmasq-full、nftables TProxy 和 TUN/ip-full 依赖。
+预装内容包括基础路由与 Wi-Fi、LuCI HTTPS 中文界面、USB3 存储与自动挂载、USB 网络共享，以及 `firewall4`、`dnsmasq-full`、nftables TProxy、TUN/ip-full 等代理基础依赖。
 
-以下内容不再预装：Ruby、Bandix、OpenClash、PassWall、旧 iptables 代理组件、WireGuard、流量统计。相关旧配置和覆盖目录已删除，避免后续构建误用。
+各配置的差异（见 `config/`）：
+
+| 配置 | 文件 | 附加内容 |
+| --- | --- | --- |
+| `none` | `x1pro.config` | 不含代理软件 |
+| `openclash` | `x1pro-openclash.config` | OpenClash（`luci-app-openclash`）+ Ruby 3.4 运行环境 + `kmod-nft-tproxy` |
+| `homeproxy` | `x1pro-homeproxy.config` | HomeProxy + sing-box |
+| `vpn` | `x1pro-vpn.config` | L2TP/IPsec 客户端与配套 hotplug 脚本 |
+
+OpenClash 的内核（clash/meta）不随固件打包，首次使用需在 LuCI 的「OpenClash → 版本更新」中下载。
+
+以下内容不再预装：PassWall、旧 iptables 代理组件、WireGuard。
 
 ## X1 Pro 设备移植
 
@@ -64,9 +75,10 @@ printenv mtdparts bootcmd ubi_read_production
 
 ## 构建与刷写
 
-在 GitHub Actions 中运行 `Build ImmortalWrt X1 Pro HomeProxy`。工作流会核对源码
+在 GitHub Actions 中运行 `Build ImmortalWrt for X1Pro`，在 `proxy` 选项中选择
+`none` / `openclash` / `homeproxy` / `vpn`。工作流会核对源码
 commit、安装官方固定版本 feeds、应用设备移植并构建单一 `.bin` 产物；发布前还会
-检查 sysupgrade TAR 板名、内层 FIT/SquashFS、设备 metadata，以及 HomeProxy
+检查 sysupgrade TAR 板名、内层 FIT/SquashFS、设备 metadata，以及所选代理软件
 直接与关键传递依赖的软件包清单。
 
 原厂恢复模式会校验厂商签名，不能直接接受该社区固件。应使用已经确认兼容的

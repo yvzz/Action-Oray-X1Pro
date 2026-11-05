@@ -19,6 +19,7 @@ on:
         default: 'none'
         options:
           - 'none'
+          - 'openclash'
           - 'homeproxy'
           - 'vpn'
       notes:
@@ -103,6 +104,7 @@ jobs:
           bash "$GITHUB_WORKSPACE/$DEVICE_SETUP"
           case "$PROXY" in
             none)      CONFIG_FILE="config/x1pro.config" ;;
+            openclash) CONFIG_FILE="config/x1pro-openclash.config" ;;
             homeproxy) CONFIG_FILE="config/x1pro-homeproxy.config" ;;
             vpn)       CONFIG_FILE="config/x1pro-vpn.config" ;;
           esac
@@ -146,6 +148,7 @@ jobs:
         run: |
           case "$PROXY" in
             none)      CONFIG_FILE="config/x1pro.config" ;;
+            openclash) CONFIG_FILE="config/x1pro-openclash.config" ;;
             homeproxy) CONFIG_FILE="config/x1pro-homeproxy.config" ;;
             vpn)       CONFIG_FILE="config/x1pro-vpn.config" ;;
           esac
@@ -284,6 +287,7 @@ jobs:
           NPROC=$(($(nproc) > 4 ? 4 : $(nproc)))
           case "$PROXY" in
             none)      CONFIG_FILE="config/x1pro.config" ;;
+            openclash) CONFIG_FILE="config/x1pro-openclash.config" ;;
             homeproxy) CONFIG_FILE="config/x1pro-homeproxy.config" ;;
             vpn)       CONFIG_FILE="config/x1pro-vpn.config" ;;
           esac
@@ -325,6 +329,22 @@ jobs:
               exit 1
             fi
           done
+
+          # openclash 版：OpenClash 与它的 Ruby 运行环境必须真的被 defconfig 选中。
+          # kconfig 对不满足 depends 的包是「静默置 n」，编译照样成功但固件里没有 OpenClash，
+          # 所以这里显式校验，失败直接中止。
+          if [ "$PROXY" = "openclash" ]; then
+            echo "=== Verify OpenClash packages ==="
+            for pkg in luci-app-openclash ruby ruby-yaml kmod-nft-tproxy kmod-inet-diag; do
+              if grep -q "CONFIG_PACKAGE_${pkg}=y" .config; then
+                echo "  [OK] ${pkg}=y"
+              else
+                echo "  [ERROR] ${pkg} not selected by defconfig (openclash build)" >&2
+                grep "${pkg}" .config || true
+                exit 1
+              fi
+            done
+          fi
 
           required_device='CONFIG_TARGET_mediatek_filogic_DEVICE_oray_x1pro=y'
           if ! grep -Fqx "$required_device" .config; then
@@ -486,6 +506,17 @@ jobs:
               exit 1
             fi
             echo "Verified proxy package in manifest: $main_pkg"
+          fi
+
+          # openclash 版：OpenClash 本体与 Ruby 运行时都要真的进镜像
+          if [ "$PROXY" = "openclash" ]; then
+            for pkg in luci-app-openclash ruby-yaml; do
+              if ! grep -Eq "^${pkg}[[:space:]]" "${MANIFESTS[0]}"; then
+                echo "ERROR: openclash package missing from firmware manifest: $pkg" >&2
+                exit 1
+              fi
+            done
+            echo "Verified openclash packages in manifest: luci-app-openclash, ruby-yaml"
           fi
 
           mkdir -p "$GITHUB_WORKSPACE/firmware_collection"
