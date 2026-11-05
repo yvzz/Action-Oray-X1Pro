@@ -4,8 +4,8 @@ permissions:
   contents: read
 
 on:
-  push:
-    branches: [v25.12]
+  # push:
+    # branches: [v25.12]
   schedule:
     - cron: '0 20 */3 * *'
   repository_dispatch:
@@ -606,12 +606,10 @@ jobs:
 
           echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           {
-            printf '## ImmortalWrt X1 Pro (%s)\n\n' "$PROXY"
             printf '**源码版本:** ImmortalWrt %s (%s)\n' "$SOURCE_REF" "$SOURCE_COMMIT"
             printf '**目标设备:** Oray X1 Pro\n'
             printf '**代理版本:** %s\n' "$PROXY"
             printf '**固定标签:** %s\n' "$RELEASE_TAG"
-            printf '**固件格式:** sysupgrade TAR (.bin)\n'
             printf '**构建开始:** %s\n' "$BUILD_START_TIME"
             printf '**构建结束:** %s\n' "$BUILD_END_TIME"
             printf '**构建耗时:** 约 %s 分钟\n' "$BUILD_DURATION"
