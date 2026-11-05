@@ -592,7 +592,8 @@ jobs:
               echo "- $(basename "$f") ($(du -h "$f" | cut -f1))"
             done
             printf '\n## 📥 下载\n\n'
-            printf '从下方 Assets 下载对应 sysupgrade.bin，通过 uboot Web UI 刷入。\n\n'
+            printf '从下方 Assets 下载对应 sysupgrade.bin，通过 uboot Web UI 刷入或 sysupgrade 刷写固件。\n\n'
+            printf '> 此 Release 不包含 BL2/FIP，且不会写入 Factory 或 bdinfo。\n'
             printf '> 由 GitHub Actions 自动构建\n'
           } > release.txt
 
