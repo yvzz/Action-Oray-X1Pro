@@ -265,10 +265,41 @@ jobs:
           ccache -z
 
       - name: Prepare feeds and X1 Pro port
+        timeout-minutes: 45
         working-directory: /workdir/openwrt
         run: |
           cp "$GITHUB_WORKSPACE/$FEEDS_CONF" feeds.conf.default
-          ./scripts/feeds update -a
+          # git 在单条连接卡死时会一直等：v24.10 的 run #333 就卡在 feeds update 上 106 分钟
+          # 才被杀，整次构建因此失败且没有有用输出。这里两道保险：
+          #   1) 低速连接 60s 内低于 1KB/s 直接断（http.lowSpeed*）
+          #   2) 每次尝试限时 12 分钟，最多 3 轮，卡住就清掉残缺 feed 再重试
+          git config --global http.lowSpeedLimit 1000
+          git config --global http.lowSpeedTime 60
+          attempt=0
+          while :; do
+            attempt=$((attempt + 1))
+            echo "=== feeds update: 第 ${attempt}/3 次尝试 ==="
+            if timeout -k 30 720 ./scripts/feeds update -a; then
+              echo "[ok] feeds update 完成"
+              break
+            fi
+            if [ "$attempt" -ge 3 ]; then
+              echo "ERROR: feeds update 连续 3 次失败/超时" >&2
+              exit 1
+            fi
+            echo "warn: feeds update 未完成（超时或网络错误），清理残缺 feed 后重试" >&2
+            for d in feeds/*/; do
+              [ -d "$d" ] || continue
+              if [ -d "$d/.git" ] && git -C "$d" rev-parse --verify HEAD >/dev/null 2>&1; then
+                echo "  keep: $d"
+              else
+                echo "  drop: $d (残缺)"
+                rm -rf "$d"
+              fi
+            done
+            find feeds -maxdepth 3 -name '*.lock' -delete 2>/dev/null || true
+            sleep 10
+          done
           ./scripts/feeds install -a
           bash "$GITHUB_WORKSPACE/$DEVICE_SETUP"
 
