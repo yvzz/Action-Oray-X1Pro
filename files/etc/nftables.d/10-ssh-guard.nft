@@ -1,21 +1,26 @@
 ## SSH 防爆破（fw4 原生实现）
 ##
 ## 背景：原来的 /etc/firewall.user 是 fw3（iptables）的机制，fw4/firewall4 根本
-## 不读取该文件，所以那条 iptables recent 规则从来没有生效过；而且它依赖的
-## xt_recent 也没编进固件。这里改用 fw4 自动加载的 /etc/nftables.d/*.nft。
+## 不读取该文件，所以那条 iptables recent 规则从来没有生效过；它依赖的 xt_recent
+## 也没编进固件，等于这块防护一直是空的。这里改用 fw4 自动加载的
+## /etc/nftables.d/*.nft（被包含进 `table inet fw4`）。
 ##
-## 本文件被 firewall4 包含进 `table inet fw4`。fw4 内置的 input 链 priority 为
-## filter(0)，这里用 -1 让本链先执行；只对「新建连接」按源 IP 限速，命中就丢，
-## 未命中的包继续走 fw4 的正常规则，因此不会改变原有的放行/拒绝策略。
+## 设计要点：
+##   1. fw4 内置 input 链 priority 为 filter(0)，本链用 -1，先于它执行；
+##      只丢弃「新建连接」，未命中的包继续走 fw4 原规则，不改变既有策略。
+##   2. 用不带名字的 limit，而不是 meter / 命名 set。实测：命名集合在
+##      `fw4 reload` 时会报 `File exists`，导致整个防火墙事务回滚——
+##      以后任何防火墙改动（含 LuCI 保存应用）都会静默失败。
+##   3. 排除 br-lan：内网管理连接不参与限速，避免管理员自己被挡在门外。
+##      外网/VPN 来源仍受 30/分钟（突发 10）约束。
+##
+## 注意：dport 固定为 22，对应 dropbear 的默认端口。若改了 dropbear 端口
+## （uci set dropbear.main.Port=xxxx），需同步改这里，否则规则不生效。
 
 chain ssh_guard {
 	type filter hook input priority -1; policy accept;
 
-	# IPv4：同一源 IP 每分钟最多 10 个 SSH 新连接，允许 5 个突发
-	meta nfproto ipv4 tcp dport 22 ct state new \
-		meter ssh_guard4 { ip saddr limit rate over 10/minute burst 5 packets } drop
-
-	# IPv6 单独计数，否则 v6 可绕过上面的限制
-	meta nfproto ipv6 tcp dport 22 ct state new \
-		meter ssh_guard6 { ip6 saddr limit rate over 10/minute burst 5 packets } drop
+	# 非内网侧新建的 SSH 连接：30/分钟，突发 10，超出即丢
+	tcp dport 22 ct state new iifname != "br-lan" \
+		limit rate over 30/minute burst 10 packets drop
 }
