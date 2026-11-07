@@ -7,16 +7,23 @@
 #   名字以 usb0..usbN 开头的直接认（RNDIS 默认命名）。
 #
 #   拔掉后回落到 /etc/board.json 里登记的出厂 wan 设备（本机是 eth0）。
-#   只在「出厂默认」和「上次由本服务设置的设备」之间切换，
-#   用户手工指到别的接口时不动它。
+#   wan 与 wan6 必须同步切换，否则 v6 默认路由会挂在已经不存在的设备上。
+#
+#   接管范围（防止覆盖用户手工配置）：
+#     - 出厂默认设备；
+#     - 上次由本服务设置的设备（记在 /etc/usbwan.last，重启后仍有效）；
+#     - 当前已插上的 USB 网卡；
+#     - 已不存在的残留设备名（拔卡后 uci 里剩下的 eth2 之类，配置本身就是坏的）。
+#   其余情况一律不动。
 #
 #   调试：USBWAN_DRY=1 只打印不落 uci；USBWAN_SYSFS=<dir> 可换 sysfs 根目录。
 
 NETDIR="${USBWAN_SYSFS:-/sys/class/net}"
 BOARD_JSON=/etc/board.json
-STATE=/tmp/usbwan.state
+STATE=/etc/usbwan.last
 POLL=5
 SETTLE=2          # 连续 N 轮（N*POLL 秒）稳定才动手，避开 F50 上电时的假枚举
+RECHECK=60        # 每 N 轮额外复核一次 uci（用户可能在 LuCI 里改过）
 
 log() {
 	logger -t usbwan "$*" 2>/dev/null
@@ -56,22 +63,36 @@ usb_netdev() {
 	[ -n "$first" ] && echo "$first"
 }
 
+# 当前 wan.device 是否属于本服务的接管范围
+owned() {
+	local dev=$1
+	[ -z "$dev" ] && return 0
+	[ "$dev" = "$BOARD" ] && return 0
+	[ "$dev" = "$PREV" ] && return 0
+	is_usb "$NETDIR/$dev" && return 0
+	# 设备已经不存在 → 残余配置，接管
+	[ -e "$NETDIR/$dev" ] || return 0
+	return 1
+}
+
 apply() {
-	local target=$1 cur prev
+	local target=$1 cur cur6
 	cur=$(uci -q get network.wan.device)
-	prev=$(cat "$STATE" 2>/dev/null)
 
 	if [ "$cur" = "$target" ]; then
 		[ -n "$USBWAN_DRY" ] && log "无需变更（wan.device 已是 $target）"
-		echo "$target" > "$STATE" 2>/dev/null
+		# 状态文件跟当前设备对齐：否则「上次由本服务设置的设备」会一直停在旧值，
+		# 重启后接管判定会用错基准
+		if [ -z "$USBWAN_DRY" ] && [ "$(cat "$STATE" 2>/dev/null)" != "$target" ]; then
+			echo "$target" > "$STATE"
+		fi
 		return 0
 	fi
 
-	# 只接管「出厂默认设备」或「上次由本服务设置的设备」
-	if [ -n "$cur" ] && [ "$cur" != "$BOARD" ] && [ "$cur" != "$prev" ]; then
+	owned "$cur" || {
 		log "wan.device 当前为 $cur（非出厂/非本服务设置），跳过自动切换"
 		return 0
-	fi
+	}
 
 	log "wan.device: ${cur:-<未设置>} -> $target"
 	if [ -n "$USBWAN_DRY" ]; then
@@ -80,6 +101,21 @@ apply() {
 
 	ifdown wan 2>/dev/null
 	uci set network.wan.device="$target"
+
+	# wan6 与 wan 同步切换。仅当 wan6 存在，且其设备属于本服务的接管范围时才动，
+	# 用户手工指到别的接口时保持不动。
+	cur6=$(uci -q get network.wan6.device)
+	if [ -n "$cur6" ]; then
+		case "$cur6" in
+			"$BOARD"|"$PREV"|"$cur")
+				uci set network.wan6.device="$target" ;;
+			*)
+				if is_usb "$NETDIR/$cur6" || [ ! -e "$NETDIR/$cur6" ]; then
+					uci set network.wan6.device="$target"
+				fi
+				;;
+		esac
+	fi
 	uci commit network
 	echo "$target" > "$STATE"
 	# 用 netifd 的 reload（只重算变更的接口）；不走 /etc/init.d/network reload，
@@ -87,6 +123,15 @@ apply() {
 	ubus call network reload >/dev/null 2>&1 || /etc/init.d/network reload
 	sleep 1
 	ifup wan
+	# wan6 依赖 wan 先拿到 v4 链路，晚一点拉，避免它在旧设备上空转
+	if uci -q get network.wan6.device >/dev/null; then
+		ifdown wan6 2>/dev/null
+		ifup wan6
+	fi
+
+	# 清掉旧设备上的 conntrack 残留：切换后旧五元组出不去，会表现为
+	# 「刚插上卡的前几十秒断流/很慢」
+	conntrack -F 2>/dev/null || echo f > /proc/net/nf_conntrack 2>/dev/null
 
 	# USB 网卡刚接入时 DHCP 偶尔卡在 pending，等 12 秒没起来就再拉一次
 	if is_usb "$NETDIR/$target"; then
@@ -104,10 +149,13 @@ apply() {
 }
 
 BOARD=$(board_wan)
-[ -f "$STATE" ] || echo "$BOARD" > "$STATE" 2>/dev/null
+PREV=$(cat "$STATE" 2>/dev/null)
+[ -n "$PREV" ] || { PREV=$BOARD; echo "$PREV" > "$STATE" 2>/dev/null; }
 
 cand=""
+applied=""
 stable=0
+tick=0
 while :; do
 	dev=$(usb_netdev)
 	want=${dev:-$BOARD}
@@ -119,9 +167,17 @@ while :; do
 		stable=0
 	fi
 
+	tick=$((tick + 1))
+
+	# 只在候选变化时动手；另外每 RECHECK 轮复核一次 uci 是否被外部改过。
+	# 以前每次 apply() 都会 fork 两次 uci 并刷一行日志（uci 已等于目标时也一样）。
 	if [ "$stable" -ge "$SETTLE" ]; then
-		apply "$cand"
-		stable=0
+		if [ "$cand" != "$applied" ] || [ "$tick" -ge "$RECHECK" ]; then
+			tick=0
+			apply "$cand"
+			applied=$cand
+			stable=0
+		fi
 	fi
 
 	sleep "$POLL"
