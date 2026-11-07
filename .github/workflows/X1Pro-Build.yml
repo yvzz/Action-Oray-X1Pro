@@ -716,7 +716,7 @@ jobs:
             由 GitHub Actions 自动发送
           attachments: X1Pro-2512-${{ env.BUILD_TIME }}.zip
 
-  # ── 清理：run 保留 7 天（失败 run 立即删）/ 旧式日期 tag 的 release 全删（固定 tag 保留）/ 孤儿 tag 全删 ──
+  # ── 清理：run 保留 7 天（失败 run 不再提前删）/ 旧式日期 tag 的 release 全删（固定 tag 保留）/ 孤儿 tag 全删 ──
   cleanup:
     name: Cleanup
     needs: [build, release, email]
@@ -730,12 +730,12 @@ jobs:
       REPO: ${{ github.repository }}
       CURRENT_RUN_ID: ${{ github.run_id }}
     steps:
-      - name: Delete old workflow runs (keep 7 days, failures always)
+      - name: Delete old workflow runs (keep 7 days, failed runs included)
         run: |
           set -uo pipefail
           RETENTION_DAYS=7
           CUTOFF_TS=$(date -u -d "$RETENTION_DAYS days ago" +%s)
-          echo "Keeping non-failed runs newer than $(date -u -d @"$CUTOFF_TS" '+%Y-%m-%d %H:%M:%S UTC') (last ${RETENTION_DAYS} days); failed runs are deleted regardless of age"
+          echo "Keeping completed runs newer than $(date -u -d @"$CUTOFF_TS" '+%Y-%m-%d %H:%M:%S UTC') (last ${RETENTION_DAYS} days); failed runs follow the same window and are never deleted early"
           WORKFLOW_ID=$(gh api "repos/$REPO/actions/runs/$CURRENT_RUN_ID" --jq '.workflow_id')
           if ! [[ "$WORKFLOW_ID" =~ ^[0-9]+$ ]]; then
             echo "ERROR: invalid workflow_id: $WORKFLOW_ID" >&2
@@ -750,19 +750,17 @@ jobs:
           while IFS=$'\t' read -r rid concl created; do
             [ -z "$rid" ] && continue
             [ "$rid" = "$CURRENT_RUN_ID" ] && continue
-            # 失败 run：不看时间，直接删
-            if [ "$concl" != "failure" ]; then
-              created_ts=$(date -u -d "$created" +%s 2>/dev/null || true)
-              if [ -z "$created_ts" ]; then
-                echo "  keep:   run $rid ($concl, 无法解析创建时间 '$created'，保守保留)"
-                kept=$((kept+1))
-                continue
-              fi
-              if [ "$created_ts" -ge "$CUTOFF_TS" ]; then
-                echo "  keep:   run $rid ($concl, created $created)"
-                kept=$((kept+1))
-                continue
-              fi
+            # 所有结论（含 failure）统一按保留期处理：失败 run 的日志是排查唯一线索，不提前删
+            created_ts=$(date -u -d "$created" +%s 2>/dev/null || true)
+            if [ -z "$created_ts" ]; then
+              echo "  keep:   run $rid ($concl, 无法解析创建时间 '$created'，保守保留)"
+              kept=$((kept+1))
+              continue
+            fi
+            if [ "$created_ts" -ge "$CUTOFF_TS" ]; then
+              echo "  keep:   run $rid ($concl, created $created)"
+              kept=$((kept+1))
+              continue
             fi
             echo "Deleting run $rid ($concl, created $created)"
             if gh api --method DELETE "repos/$REPO/actions/runs/$rid" --silent; then
