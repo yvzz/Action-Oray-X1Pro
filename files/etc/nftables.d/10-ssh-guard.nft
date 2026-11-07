@@ -1,0 +1,21 @@
+## SSH 防爆破（fw4 原生实现）
+##
+## 背景：原来的 /etc/firewall.user 是 fw3（iptables）的机制，fw4/firewall4 根本
+## 不读取该文件，所以那条 iptables recent 规则从来没有生效过；而且它依赖的
+## xt_recent 也没编进固件。这里改用 fw4 自动加载的 /etc/nftables.d/*.nft。
+##
+## 本文件被 firewall4 包含进 `table inet fw4`。fw4 内置的 input 链 priority 为
+## filter(0)，这里用 -1 让本链先执行；只对「新建连接」按源 IP 限速，命中就丢，
+## 未命中的包继续走 fw4 的正常规则，因此不会改变原有的放行/拒绝策略。
+
+chain ssh_guard {
+	type filter hook input priority -1; policy accept;
+
+	# IPv4：同一源 IP 每分钟最多 10 个 SSH 新连接，允许 5 个突发
+	meta nfproto ipv4 tcp dport 22 ct state new \
+		meter ssh_guard4 { ip saddr limit rate over 10/minute burst 5 packets } drop
+
+	# IPv6 单独计数，否则 v6 可绕过上面的限制
+	meta nfproto ipv6 tcp dport 22 ct state new \
+		meter ssh_guard6 { ip6 saddr limit rate over 10/minute burst 5 packets } drop
+}
