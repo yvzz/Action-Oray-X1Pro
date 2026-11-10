@@ -70,46 +70,6 @@ else
 	echo "WARNING: failed to clone luci-app-easytier; firmware will build without EasyTier" >&2
 fi
 
-# ---- VNT2 (whzhni1/luci-app-vnt2: 纯 LuCI 界面包) ----
-# 仓库顶层仅含单一包目录 luci-app-vnt2/（Makefile + htdocs + po + root），
-# 是 ucode + JS 的纯界面包（LUCI_PKGARCH:=all），不含 vnt/vnts 核心程序。
-# 核心二进制 vnt2_cli / vnt2_web / vnt2_ctrl / vnts2 由设备在 LuCI 界面「更新」时
-# 从 GitHub / Gitee / GitLab / Cloudflare 镜像自行下载（架构自动探测为 aarch64）。
-# 依赖 luci-base + luci-compat + kmod-tun（三份 config 均已具备）；
-# clone 失败仅告警不阻塞，此时 make defconfig 会静默丢弃对应 CONFIG_PACKAGE_* 符号。
-VNT2_TARGET="$OPENWRT/package/luci-app-vnt2"
-rm -rf "$VNT2_TARGET"
-if git clone --depth 1 https://github.com/whzhni1/luci-app-vnt2 "$VNT2_TARGET"; then
-	echo "[ok] cloned luci-app-vnt2 (纯界面包) into package/"
-else
-	echo "WARNING: failed to clone luci-app-vnt2; firmware will build without VNT2" >&2
-fi
-
-# ---- Fix VNT2 postinst/prerm/postrm: vnt2-package.sh 在 package/install 阶段可能未就位 ----
-# VNT2 的 Makefile 定义了 postinst 调用 /usr/libexec/vnt2/vnt2-package.sh，
-# 但该文件在 package/install 执行时可能尚未安装到目标路径，导致 bash 报 127
-#（No such file or directory）→ 整个构建失败。
-# 实际上 vnt2-package.sh 首行已检查 IPKG_INSTROOT 并 exit 0（构建阶段不执行），
-# 但文件不存在时 bash 在调用前就报错了。加 [ -f ] 守卫让构建跳过。
-# 注意：Makefile 里是 "$$@"（Makefile 转义），正则必须用行级匹配 + 捕获组
-# 保留尾部，不能直接匹配 "$@"（曾因此失配，修复静默无效）。
-VNT2_MK="$OPENWRT/package/luci-app-vnt2/luci-app-vnt2/Makefile"
-if [ -f "$VNT2_MK" ]; then
-	if grep -q '/usr/libexec/vnt2/vnt2-package.sh postinst' "$VNT2_MK"; then
-		perl -pi -e 's{^(/usr/libexec/vnt2/vnt2-package\.sh) (\w+)( .*)$}{[ -f $1 ] \&\& $1 $2$3 || true}' "$VNT2_MK"
-		if grep -q '\[ -f /usr/libexec/vnt2/vnt2-package.sh \]' "$VNT2_MK"; then
-			echo "[ok] VNT2 Makefile: postinst/prerm/postrm 加文件存在性检查"
-		else
-			echo "ERROR: VNT2 Makefile patch did not apply!" >&2
-			exit 1
-		fi
-	else
-		echo "[info] VNT2 Makefile 无需修补（postinst 格式已变或已修复）"
-	fi
-else
-	echo "WARNING: VNT2 Makefile not found at $VNT2_MK" >&2
-fi
-
 # ---- 全能推送 (zzsj0928/luci-app-pushbot) ----
 # 仓库顶层为单一包 luci-app-pushbot/（Makefile + htdocs + po + root），
 # v6.01 起纯 ucode 架构（LUCI_PKGARCH:=all），平台无关，需 LuCI ≥ 23.05。
