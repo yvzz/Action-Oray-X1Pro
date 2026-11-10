@@ -28,7 +28,7 @@ echo "  → luci-app-cloud-ddns ready (Makefile present)"
 # 1. Clone third-party packages into package/ (参照 TR3000)
 #    直接 clone 避免 feeds 分支/index 问题
 mkdir -p "$OPENWRT/package"
-for repo in luci-theme-aurora luci-app-aurora-config luci-app-bandix openwrt-bandix luci-app-easytier luci-app-vnt2 luci-app-pushbot; do
+for repo in luci-theme-aurora luci-app-aurora-config luci-app-bandix openwrt-bandix luci-app-easytier luci-app-pushbot; do
   if [ -d "$OPENWRT/package/$repo" ]; then
     echo "  → $repo already exists, skipping clone"
   else
@@ -38,36 +38,12 @@ for repo in luci-theme-aurora luci-app-aurora-config luci-app-bandix openwrt-ban
       luci-app-bandix)        url="https://github.com/timsaya/luci-app-bandix" ;;
       openwrt-bandix)         url="https://github.com/timsaya/openwrt-bandix" ;;
       luci-app-easytier)     url="https://github.com/EasyTier/luci-app-easytier" ;;
-      luci-app-vnt2)         url="https://github.com/whzhni1/luci-app-vnt2" ;;
       luci-app-pushbot)      url="https://github.com/zzsj0928/luci-app-pushbot" ;;
     esac
     git clone --depth=1 "$url" "$OPENWRT/package/$repo"
   fi
 done
 echo "  → aurora + pushbot packages cloned"
-
-# 1b1. Fix VNT2 postinst: vnt2-package.sh 在 package/install 阶段可能未就位
-#      导致 bash 报 127(No such file or directory) → 整个构建失败。
-#      实际上 vnt2-package.sh 首行已检查 IPKG_INSTROOT 并 exit 0，
-#      但文件不存在时 bash 在调用前就报错了。加 [ -f ] 守卫。
-#      注意：Makefile 里是 "$$@"（Makefile 转义），正则必须用行级匹配 + 捕获组
-#      保留尾部，不能直接匹配 "$@"（曾因此失配，修复静默无效）。
-VNT2_MK="$OPENWRT/package/luci-app-vnt2/luci-app-vnt2/Makefile"
-if [ -f "$VNT2_MK" ]; then
-  if grep -q '/usr/libexec/vnt2/vnt2-package.sh postinst' "$VNT2_MK"; then
-    perl -pi -e 's{^(/usr/libexec/vnt2/vnt2-package\.sh) (\w+)( .*)$}{[ -f $1 ] \&\& $1 $2$3 || true}' "$VNT2_MK"
-    if grep -q '\[ -f /usr/libexec/vnt2/vnt2-package.sh \]' "$VNT2_MK"; then
-      echo "  → VNT2 Makefile: postinst/prerm/postrm 加文件存在性检查"
-    else
-      echo "  → [ERROR] VNT2 Makefile patch did not apply!" >&2
-      exit 1
-    fi
-  else
-    echo "  → [info] VNT2 Makefile 无需修补（postinst 格式已变或已修复）"
-  fi
-else
-  echo "  → [WARN] VNT2 Makefile not found at $VNT2_MK" >&2
-fi
 
 # 1b2. NPC 升级到 0.34（djylb/nps-openwrt）
 #   上游 immortalwrt/packages 的 net/nps 是 Go 源码编译、版本停在 0.26.24，
