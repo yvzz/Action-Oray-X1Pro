@@ -1,8 +1,14 @@
 #!/bin/sh
 # uci-defaults: 首次启动将 LuCI 默认主题切到 Aurora
 # 仅在 aurora 静态资源实际安装时才切换，避免主题切坏（缺包时保持默认 bootstrap）
+#
+# 注意：LuCI 实际读取的是 luci.main.mediaurlbase
+#   /usr/share/ucode/luci/runtime.uc: let media = uci.get('luci','main','mediaurlbase')
+# 此前这里写的是 mediaurlpath —— 全盘没有任何代码读这个键，等于静默失效，
+# 全新刷机后主题仍是 bootstrap。顺手把误写的旧键删掉，避免混淆。
 if [ -d /www/luci-static/aurora ]; then
-	uci set luci.main.mediaurlpath='/luci-static/aurora'
+	uci set luci.main.mediaurlbase='/luci-static/aurora'
+	uci -q delete luci.main.mediaurlpath
 	uci commit luci
 fi
 exit 0
