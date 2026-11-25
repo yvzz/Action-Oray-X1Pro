@@ -214,4 +214,44 @@ else
   echo "  [WARN] scripts/download.pl not found at $DL_PL" >&2
 fi
 
+# ---- Fix: 上游 netifd 把 /sbin/ifdown 的符号链接提交成了 4 字节普通文件 ----
+# immortalwrt 24.10 / 25.12 的 package/network/config/netifd/files/sbin/ifdown
+# 在 git 里就是普通文件（内容为目标字符串 "ifup"，且无执行权限）。镜像里
+# /sbin/ifdown 因此是个 4 字节文本文件，任何 `ifdown xxx` 都在 "Permission denied"
+# 后静默失败 —— usbwan-watch 的 ifdown wan/wan6、check-vpn.sh 的 L2TP 修复动作
+# 全部失效，而且不会有任何报错。
+# ifup 脚本本身按 $0 判别身份（case "$0" in *ifdown) modes=down），所以直接复制
+# 一份同名可执行副本即可，不依赖符号链接（避免再有环节把它展平）。
+IFDOWN_DIR="$OPENWRT/package/network/config/netifd/files/sbin"
+if [ ! -d "$IFDOWN_DIR" ]; then
+  IFDOWN_DIR="$(find "$OPENWRT/package" -type d -path '*netifd/files/sbin' 2>/dev/null | head -1 || true)"
+fi
+if [ -n "$IFDOWN_DIR" ] && [ -f "$IFDOWN_DIR/ifup" ]; then
+  IFDOWN_F="$IFDOWN_DIR/ifdown"
+  IFUP_F="$IFDOWN_DIR/ifup"
+  need_fix=0
+  if [ ! -e "$IFDOWN_F" ]; then
+    need_fix=1
+  elif [ -L "$IFDOWN_F" ]; then
+    [ "$(readlink "$IFDOWN_F")" = "ifup" ] || need_fix=1
+  elif [ ! -x "$IFDOWN_F" ] || [ "$(head -c 2 "$IFDOWN_F" 2>/dev/null || true)" != "#!" ]; then
+    need_fix=1
+  fi
+  if [ "$need_fix" = "1" ]; then
+    rm -f "$IFDOWN_F"
+    cp -f "$IFUP_F" "$IFDOWN_F"
+    chmod 755 "$IFDOWN_F"
+    echo "  → netifd ifdown: 已替换为 ifup 的可执行副本（原文件是 4 字节非执行文本）"
+  else
+    echo "  → netifd ifdown: 正常，跳过"
+  fi
+  # 强制校验：修完必须可执行且是脚本，否则让 CI 当场失败
+  if [ ! -x "$IFDOWN_F" ] || [ "$(head -c 2 "$IFDOWN_F")" != "#!" ]; then
+    echo "  [ERROR] ifdown 修复未生效: $IFDOWN_F" >&2
+    exit 1
+  fi
+else
+  echo "  [WARN] 未找到 netifd files/sbin/ifup，跳过 ifdown 修复" >&2
+fi
+
 echo "=== DIY Part 1 done ==="
